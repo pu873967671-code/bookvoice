@@ -10,7 +10,8 @@
   "dependencies": {
     "bullmq": "^5.46.1",
     "dotenv": "^16.4.5",
-    "ioredis": "^5.4.1"
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "tsx": "^4.19.3"
