@@ -14,6 +14,7 @@ create table if not exists books (
   user_id uuid not null references users(id) on delete cascade,
   title text not null,
   source_object_key text not null,
+  source_text text,
   language text not null default 'zh-CN',
   status text not null default 'uploaded',
   total_chars int not null default 0,

@@ -13,8 +13,10 @@ type JobType = 'parse' | 'tts' | 'render';
 
 type BookRow = {
   id: string;
+  user_id: string;
   title: string;
   source_object_key: string;
+  source_text: string | null;
   language: string;
   total_chars: number;
   created_at: Date;
@@ -45,21 +47,39 @@ const queues: Record<JobType, Queue> = {
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 
-const createBookSchema = z.object({
-  title: z.string().min(1),
-  sourceObjectKey: z.string().min(1),
-  language: z.string().default('zh-CN'),
-  totalChars: z.number().int().nonnegative().default(0),
-  userId: z.string().uuid().optional()
-});
+const createBookSchema = z
+  .object({
+    title: z.string().min(1),
+    sourceObjectKey: z.string().min(1).optional(),
+    sourceText: z.string().min(1).optional(),
+    language: z.string().default('zh-CN'),
+    totalChars: z.number().int().nonnegative().optional(),
+    userId: z.string().uuid().optional()
+  })
+  .refine((d) => Boolean(d.sourceObjectKey || d.sourceText), {
+    message: 'sourceObjectKey_or_sourceText_required'
+  });
 
 const createJobSchema = z.object({
   bookId: z.string().uuid(),
   type: z.enum(['parse', 'tts', 'render']),
   userId: z.string().uuid().optional()
 });
+
+function getCycleMonthInShanghai(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  if (!year || !month) throw new Error('cycle_month_parse_failed');
+  return `${year}-${month}`;
+}
 
 const ensureDefaultUser = async () => {
   const userId = process.env.DEFAULT_USER_ID || '00000000-0000-0000-0000-000000000001';
@@ -72,10 +92,79 @@ const ensureDefaultUser = async () => {
   return userId;
 };
 
+async function reserveTtsQuota(userId: string, bookId: string, charCost: number, jobId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+
+    const cycleMonth = getCycleMonthInShanghai();
+    const [year, month] = cycleMonth.split('-').map(Number);
+    const resetAt = new Date(Date.UTC(year, month - 1, 1, -8, 0, 0)); // Beijing 00:00
+
+    await client.query(
+      `insert into quota_cycles(user_id, cycle_month, reset_at)
+       values($1, $2, $3)
+       on conflict (user_id, cycle_month) do nothing`,
+      [userId, cycleMonth, resetAt]
+    );
+
+    const { rows } = await client.query<{
+      book_limit: number;
+      book_used: number;
+      char_limit: number;
+      char_used: number;
+      bonus_book: number;
+      bonus_char: number;
+    }>(
+      `select book_limit, book_used, char_limit, char_used, bonus_book, bonus_char
+       from quota_cycles
+       where user_id=$1 and cycle_month=$2
+       for update`,
+      [userId, cycleMonth]
+    );
+
+    const cycle = rows[0];
+    if (!cycle) throw new Error('quota_cycle_not_found');
+
+    const remainBooks = cycle.book_limit + cycle.bonus_book - cycle.book_used;
+    const remainChars = cycle.char_limit + cycle.bonus_char - cycle.char_used;
+
+    if (remainBooks < 1 || remainChars < charCost) {
+      await client.query('rollback');
+      return { ok: false as const, remainBooks, remainChars };
+    }
+
+    await client.query(
+      `update quota_cycles
+       set book_used = book_used + 1,
+           char_used = char_used + $3,
+           updated_at = now()
+       where user_id = $1 and cycle_month = $2`,
+      [userId, cycleMonth, charCost]
+    );
+
+    await client.query(
+      `insert into quota_ledger(user_id, cycle_month, book_id, action, book_delta, char_delta, reason, idempotency_key)
+       values($1, $2, $3, 'reserve', 1, $4, 'tts_reserve', $5)
+       on conflict (idempotency_key) do nothing`,
+      [userId, cycleMonth, bookId, charCost, `tts:reserve:${jobId}`]
+    );
+
+    await client.query('commit');
+    return { ok: true as const };
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 const mapBook = (r: BookRow) => ({
   id: r.id,
   title: r.title,
   sourceObjectKey: r.source_object_key,
+  hasSourceText: Boolean(r.source_text),
   language: r.language,
   totalChars: r.total_chars,
   createdAt: r.created_at.toISOString()
@@ -107,12 +196,14 @@ app.post('/v1/books', async (req, res) => {
 
   const userId = parsed.data.userId || (await ensureDefaultUser());
   const id = uuidv4();
+  const sourceObjectKey = parsed.data.sourceObjectKey || `inline://${id}.txt`;
+  const estimatedChars = parsed.data.totalChars ?? parsed.data.sourceText?.length ?? 0;
 
   const { rows } = await pool.query<BookRow>(
-    `insert into books(id, user_id, title, source_object_key, language, total_chars, status)
-     values($1, $2, $3, $4, $5, $6, 'uploaded')
-     returning id, title, source_object_key, language, total_chars, created_at`,
-    [id, userId, parsed.data.title, parsed.data.sourceObjectKey, parsed.data.language, parsed.data.totalChars]
+    `insert into books(id, user_id, title, source_object_key, source_text, language, total_chars, status)
+     values($1, $2, $3, $4, $5, $6, $7, 'uploaded')
+     returning id, user_id, title, source_object_key, source_text, language, total_chars, created_at`,
+    [id, userId, parsed.data.title, sourceObjectKey, parsed.data.sourceText || null, parsed.data.language, estimatedChars]
   );
 
   res.status(201).json(mapBook(rows[0]));
@@ -120,7 +211,7 @@ app.post('/v1/books', async (req, res) => {
 
 app.get('/v1/books/:bookId', async (req, res) => {
   const { rows } = await pool.query<BookRow>(
-    `select id, title, source_object_key, language, total_chars, created_at
+    `select id, user_id, title, source_object_key, source_text, language, total_chars, created_at
      from books where id = $1 limit 1`,
     [req.params.bookId]
   );
@@ -134,11 +225,28 @@ app.post('/v1/jobs', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const userId = parsed.data.userId || (await ensureDefaultUser());
-  const { rows: bookRows } = await pool.query('select id from books where id = $1 limit 1', [parsed.data.bookId]);
-  if (!bookRows[0]) return res.status(404).json({ error: 'book_not_found' });
+  const { rows: bookRows } = await pool.query<BookRow>(
+    `select id, user_id, title, source_object_key, source_text, language, total_chars, created_at
+     from books where id = $1 limit 1`,
+    [parsed.data.bookId]
+  );
+
+  const book = bookRows[0];
+  if (!book) return res.status(404).json({ error: 'book_not_found' });
 
   const id = uuidv4();
   const idempotencyKey = `${parsed.data.type}:${parsed.data.bookId}:${id}`;
+
+  if (parsed.data.type === 'tts') {
+    const reserve = await reserveTtsQuota(userId, parsed.data.bookId, Math.max(1, book.total_chars), id);
+    if (!reserve.ok) {
+      return res.status(402).json({
+        error: 'quota_exceeded',
+        remainBooks: reserve.remainBooks,
+        remainChars: reserve.remainChars
+      });
+    }
+  }
 
   const { rows } = await pool.query<JobRow>(
     `insert into jobs(id, user_id, book_id, job_type, status, progress, idempotency_key)
@@ -149,7 +257,12 @@ app.post('/v1/jobs', async (req, res) => {
 
   await queues[parsed.data.type].add(
     `${parsed.data.type}-book`,
-    { jobId: id, bookId: parsed.data.bookId, type: parsed.data.type },
+    {
+      jobId: id,
+      userId,
+      bookId: parsed.data.bookId,
+      type: parsed.data.type
+    },
     { jobId: id, attempts: 3, removeOnComplete: 50, removeOnFail: 200 }
   );
 
