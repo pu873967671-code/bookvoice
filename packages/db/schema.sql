@@ -1,0 +1,2 @@
+-- Initial schema placeholder (to be migrated with Prisma/TypeORM later)
+-- See chat spec for full tables: users/books/chapters/jobs/quota_cycles/quota_ledger
