@@ -19,12 +19,13 @@ Upload ebooks and convert them into audiobooks with AI TTS.
 - chapter split + store into `chapters`
 - quota reserve / consume / refund flow for TTS
 
-### Phase 4
+### Phase 4+
 - Azure TTS adapter wired (set `MOCK_TTS=false` + `AZURE_TTS_KEY`)
 - mock TTS still available for local dev
 - chapter audio rendered to local `storage/tts/<bookId>/chapter-xxx.mp3`
 - full book render via `ffmpeg` concat into `storage/renders/<bookId>.mp3`
 - optional MinIO / S3 object storage upload after render
+- chapter audio can also upload to object storage
 - auto-create bucket support for local/dev CI
 - download endpoint: `GET /v1/books/:id/download`
 - when `USE_OBJECT_STORAGE=true`, download endpoint returns signed URL JSON
@@ -138,7 +139,7 @@ MOCK_TTS=false ./scripts/smoke-phase4.sh
 USE_OBJECT_STORAGE=true S3_AUTO_CREATE_BUCKET=true ./scripts/smoke-phase4.sh
 ```
 
-CI also runs `.github/workflows/smoke-test.yml` on push / PR in both modes.
+CI also runs `.github/workflows/smoke-test.yml` on push / PR in both modes as separate jobs (filesystem on `3301`, object storage on `3302`).
 
 Smoke script now uses a fresh random `userId` by default, so repeated local/CI runs do not get blocked by accumulated quota usage.
 
@@ -174,9 +175,17 @@ SIGNED_URL_EXPIRES_SEC=3600
 
 Current behavior:
 - worker still renders local mp3 first
-- if object storage enabled, worker uploads rendered mp3 to S3/MinIO
+- chapter audio can upload to `chapter-audio/<bookId>/chapter-xxx.mp3`
+- rendered full-book mp3 can upload to `renders/<bookId>.mp3`
 - API download endpoint returns a signed download URL JSON instead of direct file stream
 - missing bucket can be auto-created in local/dev mode
+
+## Schema notes
+
+`chapters` now stores extra asset metadata:
+- `audio_url` → local relative path
+- `audio_object_key` → object storage key when enabled
+- `audio_format` → current chapter audio format (`mp3`)
 
 ## Template repo notes
 
@@ -194,6 +203,6 @@ MIT
 
 ## Notes
 
-- `audio_url` currently stores local relative paths, not public URLs.
-- chapter mp3 files are still local filesystem artifacts for now.
-- next natural step: upload chapter audio too, add cleanup lifecycle, and persist richer asset metadata.
+- full-book download endpoint is already object-storage aware.
+- chapter-level signed playback/download API is not exposed yet.
+- next natural step: add cleanup lifecycle + chapter asset APIs.

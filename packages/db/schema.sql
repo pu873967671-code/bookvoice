@@ -31,10 +31,15 @@ create table if not exists chapters (
   text_content text not null,
   char_count int not null default 0,
   audio_url text,
+  audio_object_key text,
+  audio_format text,
   duration_sec int,
   created_at timestamptz not null default now(),
   unique (book_id, chapter_index)
 );
+
+alter table chapters add column if not exists audio_object_key text;
+alter table chapters add column if not exists audio_format text;
 
 create table if not exists jobs (
   id uuid primary key default gen_random_uuid(),

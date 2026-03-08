@@ -169,6 +169,10 @@ function chapterStorageAbsPath(bookId: string, index: number) {
   return path.join(storageRoot, 'tts', bookId, makeChapterFilename(index));
 }
 
+function chapterObjectKey(bookId: string, index: number) {
+  return path.posix.join('chapter-audio', bookId, makeChapterFilename(index));
+}
+
 function renderStorageRelPath(bookId: string) {
   return path.posix.join('renders', `${bookId}.mp3`);
 }
@@ -362,6 +366,7 @@ async function runTTS(data: QueueJobData) {
   for (const ch of chapters) {
     const outPath = chapterStorageAbsPath(data.bookId, ch.chapter_index);
     const relPath = chapterStorageRelPath(data.bookId, ch.chapter_index);
+    const objectKey = chapterObjectKey(data.bookId, ch.chapter_index);
 
     if (mockTts) {
       await generateMockMp3(ch.text_content, outPath);
@@ -369,14 +374,20 @@ async function runTTS(data: QueueJobData) {
       await synthesizeAzureMp3(ch.text_content, outPath);
     }
 
+    if (useObjectStorage) {
+      await uploadFileToObjectStorage(outPath, objectKey, 'audio/mpeg');
+    }
+
     const durationSec = await getAudioDurationSec(outPath);
 
     await pool.query(
       `update chapters
        set audio_url = $2,
-           duration_sec = $3
+           audio_object_key = $3,
+           audio_format = $4,
+           duration_sec = $5
        where id = $1`,
-      [ch.id, relPath, durationSec]
+      [ch.id, relPath, useObjectStorage ? objectKey : null, 'mp3', durationSec]
     );
   }
 

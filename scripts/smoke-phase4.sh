@@ -22,10 +22,17 @@ HEALTH_JSON="$LOG_DIR/health.json"
 BOOK_JSON="$LOG_DIR/book.json"
 BOOK_STATE_JSON="$LOG_DIR/book-state.json"
 DOWNLOAD_JSON="$LOG_DIR/download.json"
+CHAPTERS_JSON="$LOG_DIR/chapters.json"
 
 cleanup() {
-  if [[ -n "${API_PID:-}" ]]; then kill "$API_PID" 2>/dev/null || true; fi
-  if [[ -n "${WORKER_PID:-}" ]]; then kill "$WORKER_PID" 2>/dev/null || true; fi
+  if [[ -n "${API_PID:-}" ]]; then
+    kill "$API_PID" 2>/dev/null || true
+    wait "$API_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${WORKER_PID:-}" ]]; then
+    kill "$WORKER_PID" 2>/dev/null || true
+    wait "$WORKER_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -112,6 +119,7 @@ S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-minioadmin}" \
 S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}" \
 S3_BUCKET="$S3_BUCKET" \
 S3_AUTO_CREATE_BUCKET="$S3_AUTO_CREATE_BUCKET" \
+STORAGE_ROOT="${STORAGE_ROOT:-$ROOT_DIR/storage}" \
 npm run start:api >"$API_LOG" 2>&1 &
 API_PID=$!
 
@@ -124,6 +132,7 @@ S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-minioadmin}" \
 S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}" \
 S3_BUCKET="$S3_BUCKET" \
 S3_AUTO_CREATE_BUCKET="$S3_AUTO_CREATE_BUCKET" \
+STORAGE_ROOT="${STORAGE_ROOT:-$ROOT_DIR/storage}" \
 npm run start:worker >"$WORKER_LOG" 2>&1 &
 WORKER_PID=$!
 
@@ -187,6 +196,28 @@ if [[ -z "$RENDER_KEY" || "$RENDER_FORMAT" != "mp3" ]]; then
 fi
 
 if [[ "$USE_OBJECT_STORAGE" == "true" ]]; then
+  docker compose -f infra/docker-compose.yml exec -T postgres \
+    psql -U postgres -d bookvoice -t -A \
+    -c "select chapter_index || '|' || coalesce(audio_object_key,'') || '|' || coalesce(audio_format,'') from chapters where book_id='${BOOK_ID}' order by chapter_index" >"$CHAPTERS_JSON"
+  cat "$CHAPTERS_JSON"
+  echo
+  python3 - "$CHAPTERS_JSON" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+lines = [line.strip() for line in p.read_text().splitlines() if line.strip()]
+if not lines:
+    raise SystemExit('no chapter rows found')
+for line in lines:
+    parts = line.split('|')
+    if len(parts) != 3:
+        raise SystemExit(f'invalid chapter row: {line}')
+    _, object_key, audio_format = parts
+    if not object_key.startswith('chapter-audio/'):
+        raise SystemExit(f'missing chapter object key: {line}')
+    if audio_format != 'mp3':
+        raise SystemExit(f'invalid chapter audio format: {line}')
+PY
+
   curl -sf "http://127.0.0.1:${API_PORT}/v1/books/${BOOK_ID}/download" >"$DOWNLOAD_JSON"
   cat "$DOWNLOAD_JSON"
   echo
