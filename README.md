@@ -25,6 +25,7 @@ Upload ebooks and convert them into audiobooks with AI TTS.
 - chapter audio rendered to local `storage/tts/<bookId>/chapter-xxx.mp3`
 - full book render via `ffmpeg` concat into `storage/renders/<bookId>.mp3`
 - download endpoint: `GET /v1/books/:id/download`
+- GitHub Actions smoke test workflow included
 
 ## Quick start
 
@@ -92,6 +93,23 @@ curl -s http://localhost:3000/v1/jobs \
 curl -L http://localhost:3000/v1/books/<BOOK_ID>/download -o output.mp3
 ```
 
+## Smoke test
+
+Run the end-to-end local smoke test:
+
+```bash
+./scripts/smoke-phase4.sh
+```
+
+Useful overrides:
+
+```bash
+API_PORT=3301 MOCK_TTS=true ./scripts/smoke-phase4.sh
+MOCK_TTS=false ./scripts/smoke-phase4.sh
+```
+
+CI also runs `.github/workflows/smoke-test.yml` on push / PR.
+
 ## Azure TTS
 
 Set:
@@ -104,6 +122,20 @@ AZURE_TTS_VOICE=zh-CN-XiaoxiaoNeural
 ```
 
 Current implementation calls Azure Speech REST API directly and writes MP3 files locally.
+
+## Template repo notes
+
+This repo is configured as a GitHub template.
+
+Recommended first steps after creating your own copy:
+- rename repo
+- update `.env`
+- run smoke test
+- optionally set up your own GitHub Actions secrets for real TTS
+
+## License
+
+MIT
 
 ## Notes
 

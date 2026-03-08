@@ -1,0 +1,50 @@
+name: smoke-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  phase4-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Docker Compose plugin
+        run: |
+          docker compose version || true
+
+      - name: Run phase4 smoke test
+        env:
+          API_PORT: 3301
+          MOCK_TTS: true
+          WAIT_SECS: 90
+        run: |
+          chmod +x scripts/smoke-phase4.sh
+          ./scripts/smoke-phase4.sh
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          path: |
+            /tmp/bookvoice-smoke
+            /tmp/bookvoice-smoke-output.mp3
+          if-no-files-found: ignore
