@@ -24,7 +24,9 @@ Upload ebooks and convert them into audiobooks with AI TTS.
 - mock TTS still available for local dev
 - chapter audio rendered to local `storage/tts/<bookId>/chapter-xxx.mp3`
 - full book render via `ffmpeg` concat into `storage/renders/<bookId>.mp3`
+- optional MinIO / S3 object storage upload after render
 - download endpoint: `GET /v1/books/:id/download`
+- when `USE_OBJECT_STORAGE=true`, download endpoint returns signed URL JSON
 - GitHub Actions smoke test workflow included
 
 ## Quick start
@@ -89,8 +91,28 @@ curl -s http://localhost:3000/v1/jobs \
 
 ### 5. Download
 
+Local file mode:
+
 ```bash
 curl -L http://localhost:3000/v1/books/<BOOK_ID>/download -o output.mp3
+```
+
+Object storage mode (`USE_OBJECT_STORAGE=true`):
+
+```bash
+curl http://localhost:3000/v1/books/<BOOK_ID>/download
+```
+
+Returns JSON like:
+
+```json
+{
+  "mode": "signed_url",
+  "url": "http://...",
+  "expiresInSec": 3600,
+  "objectKey": "renders/<BOOK_ID>.mp3",
+  "format": "mp3"
+}
 ```
 
 ## Smoke test
@@ -123,6 +145,27 @@ AZURE_TTS_VOICE=zh-CN-XiaoxiaoNeural
 
 Current implementation calls Azure Speech REST API directly and writes MP3 files locally.
 
+## MinIO / S3 object storage
+
+Default local dev uses filesystem only.
+
+To enable object storage upload + signed URL download:
+
+```bash
+USE_OBJECT_STORAGE=true
+S3_ENDPOINT=http://localhost:9000
+S3_REGION=us-east-1
+S3_BUCKET=bookvoice-dev
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
+SIGNED_URL_EXPIRES_SEC=3600
+```
+
+Current behavior:
+- worker still renders local mp3 first
+- if object storage enabled, worker uploads rendered mp3 to S3/MinIO
+- API download endpoint returns a signed download URL JSON instead of direct file stream
+
 ## Template repo notes
 
 This repo is configured as a GitHub template.
@@ -140,5 +183,5 @@ MIT
 ## Notes
 
 - `audio_url` currently stores local relative paths, not public URLs.
-- render output is local filesystem only for now.
-- next natural step: object storage upload + signed download URLs + background cleanup.
+- chapter mp3 files are still local filesystem artifacts for now.
+- next natural step: upload chapter audio too, add cleanup lifecycle, and persist richer asset metadata.

@@ -10,6 +10,7 @@ import { Worker } from 'bullmq';
 import pg from 'pg';
 import AdmZip from 'adm-zip';
 import he from 'he';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const execFile = promisify(execFileCallback);
 const { Pool } = pg;
@@ -51,9 +52,26 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const storageRoot = process.env.STORAGE_ROOT
   ? path.resolve(process.env.STORAGE_ROOT)
   : path.join(repoRoot, 'storage');
+const s3Bucket = process.env.S3_BUCKET || '';
+const s3Endpoint = process.env.S3_ENDPOINT || '';
+const s3Region = process.env.S3_REGION || 'us-east-1';
+const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID || '';
+const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY || '';
+const useObjectStorage = process.env.USE_OBJECT_STORAGE === 'true';
 
 const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const pool = new Pool({ connectionString: databaseUrl });
+const s3 = useObjectStorage && s3Bucket && s3Endpoint && s3AccessKeyId && s3SecretAccessKey
+  ? new S3Client({
+      region: s3Region,
+      endpoint: s3Endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: s3AccessKeyId,
+        secretAccessKey: s3SecretAccessKey
+      }
+    })
+  : null;
 
 async function setJobState(jobId: string, status: 'queued' | 'running' | 'done' | 'failed', progress: number, errorMessage?: string) {
   await pool.query(
@@ -246,6 +264,19 @@ async function concatMp3Files(inputFiles: string[], outputFile: string) {
   }
 }
 
+async function uploadFileToObjectStorage(localPath: string, objectKey: string, contentType: string) {
+  if (!s3 || !s3Bucket) throw new Error('object_storage_not_configured');
+  const body = await fs.readFile(localPath);
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: s3Bucket,
+      Key: objectKey,
+      Body: body,
+      ContentType: contentType
+    })
+  );
+}
+
 async function runParse(data: QueueJobData) {
   const { rows } = await pool.query<{
     source_object_key: string;
@@ -344,7 +375,12 @@ async function runRender(data: QueueJobData) {
   }
 
   const outputFile = renderStorageAbsPath(data.bookId);
+  const objectKey = renderStorageRelPath(data.bookId);
   await concatMp3Files(inputFiles, outputFile);
+
+  if (useObjectStorage) {
+    await uploadFileToObjectStorage(outputFile, objectKey, 'audio/mpeg');
+  }
 
   await pool.query(
     `update books
@@ -352,7 +388,7 @@ async function runRender(data: QueueJobData) {
          render_object_key = $2,
          render_format = $3
      where id = $1`,
-    [data.bookId, renderStorageRelPath(data.bookId), 'mp3']
+    [data.bookId, objectKey, 'mp3']
   );
 }
 
@@ -501,3 +537,5 @@ console.log('[worker] db:', databaseUrl);
 console.log('[worker] mockTts:', mockTts);
 console.log('[worker] storageRoot:', storageRoot);
 console.log('[worker] azureVoice:', azureVoice);
+console.log('[worker] useObjectStorage:', useObjectStorage);
+console.log('[worker] s3Bucket:', s3Bucket || '');

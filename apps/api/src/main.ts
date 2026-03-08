@@ -9,6 +9,8 @@ import { z } from 'zod';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import pg from 'pg';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const { Pool } = pg;
 
@@ -45,9 +47,28 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const storageRoot = process.env.STORAGE_ROOT
   ? path.resolve(process.env.STORAGE_ROOT)
   : path.join(repoRoot, 'storage');
+const s3Bucket = process.env.S3_BUCKET || '';
+const s3Endpoint = process.env.S3_ENDPOINT || '';
+const s3Region = process.env.S3_REGION || 'us-east-1';
+const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID || '';
+const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY || '';
+const signedUrlExpiresSec = Number(process.env.SIGNED_URL_EXPIRES_SEC || 3600);
+const useObjectStorage = process.env.USE_OBJECT_STORAGE === 'true';
 
 const pool = new Pool({ connectionString: databaseUrl });
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+
+const s3 = useObjectStorage && s3Bucket && s3Endpoint && s3AccessKeyId && s3SecretAccessKey
+  ? new S3Client({
+      region: s3Region,
+      endpoint: s3Endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: s3AccessKeyId,
+        secretAccessKey: s3SecretAccessKey
+      }
+    })
+  : null;
 
 const queues: Record<JobType, Queue> = {
   parse: new Queue('parse', { connection: redis }),
@@ -197,10 +218,32 @@ function safeFilename(input: string) {
   return input.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() || 'bookvoice';
 }
 
+async function getSignedDownloadUrl(objectKey: string, downloadName: string) {
+  if (!s3 || !s3Bucket) throw new Error('object_storage_not_configured');
+
+  return getSignedUrl(
+    s3,
+    new GetObjectCommand({
+      Bucket: s3Bucket,
+      Key: objectKey,
+      ResponseContentDisposition: `attachment; filename="${safeFilename(downloadName)}"`
+    }),
+    { expiresIn: signedUrlExpiresSec }
+  );
+}
+
 app.get('/health', async (_, res) => {
   try {
     await pool.query('select 1');
-    res.json({ ok: true, service: 'bookvoice-api', db: 'ok', storageRoot, ts: new Date().toISOString() });
+    res.json({
+      ok: true,
+      service: 'bookvoice-api',
+      db: 'ok',
+      storageRoot,
+      useObjectStorage,
+      s3Bucket: s3Bucket || null,
+      ts: new Date().toISOString()
+    });
   } catch (error) {
     res.status(500).json({ ok: false, service: 'bookvoice-api', db: 'error', error: String(error) });
   }
@@ -307,15 +350,30 @@ app.get('/v1/books/:bookId/download', async (req, res) => {
   if (!book) return res.status(404).json({ error: 'book_not_found' });
   if (!book.render_object_key) return res.status(409).json({ error: 'render_not_ready' });
 
+  const ext = book.render_format || path.extname(book.render_object_key).replace(/^\./, '') || 'bin';
+  const downloadName = `${safeFilename(book.title)}.${ext}`;
+
+  if (useObjectStorage) {
+    try {
+      const url = await getSignedDownloadUrl(book.render_object_key, downloadName);
+      return res.json({
+        mode: 'signed_url',
+        url,
+        expiresInSec: signedUrlExpiresSec,
+        objectKey: book.render_object_key,
+        format: ext
+      });
+    } catch (error) {
+      return res.status(500).json({ error: 'signed_url_failed', detail: String(error) });
+    }
+  }
+
   const fullPath = path.resolve(storageRoot, book.render_object_key);
   try {
     await fs.access(fullPath);
   } catch {
     return res.status(404).json({ error: 'render_file_missing', fullPath });
   }
-
-  const ext = book.render_format || path.extname(fullPath).replace(/^\./, '') || 'bin';
-  const downloadName = `${safeFilename(book.title)}.${ext}`;
 
   if (ext === 'm3u8') {
     return res.sendFile(fullPath);
@@ -331,4 +389,6 @@ app.listen(port, async () => {
   console.log(`[api] db=${databaseUrl}`);
   console.log(`[api] redis=${redisUrl}`);
   console.log(`[api] storageRoot=${storageRoot}`);
+  console.log(`[api] useObjectStorage=${useObjectStorage}`);
+  console.log(`[api] s3Bucket=${s3Bucket || ''}`);
 });
