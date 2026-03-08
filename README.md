@@ -1,5 +1,7 @@
 # bookvoice
 
+> GitHub template repo: click **Use this template** to create your own BookVoice app.
+
 Upload ebooks and convert them into audiobooks with AI TTS.
 
 ## Current MVP
