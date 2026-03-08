@@ -254,6 +254,12 @@ app.post('/v1/books', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const userId = parsed.data.userId || (await ensureDefaultUser());
+  await pool.query(
+    `insert into users(id, email, plan, timezone)
+     values($1, $2, 'free', 'Asia/Shanghai')
+     on conflict (id) do nothing`,
+    [userId, `user-${userId}@bookvoice.local`]
+  );
   const id = uuidv4();
   const sourceObjectKey = parsed.data.sourceObjectKey || `inline://${id}.txt`;
   const estimatedChars = parsed.data.totalChars ?? parsed.data.sourceText?.length ?? 0;

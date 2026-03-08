@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  phase4-smoke:
+  phase4-smoke-filesystem:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,21 +30,69 @@ jobs:
         run: |
           docker compose version || true
 
-      - name: Run phase4 smoke test
+      - name: Run filesystem smoke test
         env:
           API_PORT: 3301
           MOCK_TTS: true
           WAIT_SECS: 90
+          USE_OBJECT_STORAGE: false
         run: |
           chmod +x scripts/smoke-phase4.sh
           ./scripts/smoke-phase4.sh
 
-      - name: Upload smoke artifacts
+      - name: Upload filesystem smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-artifacts
+          name: smoke-artifacts-filesystem
           path: |
             /tmp/bookvoice-smoke
             /tmp/bookvoice-smoke-output.mp3
+          if-no-files-found: ignore
+
+  phase4-smoke-object-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Docker Compose plugin
+        run: |
+          docker compose version || true
+
+      - name: Run object storage smoke test
+        env:
+          API_PORT: 3302
+          MOCK_TTS: true
+          WAIT_SECS: 90
+          USE_OBJECT_STORAGE: true
+          S3_BUCKET: bookvoice-ci-smoke
+          S3_AUTO_CREATE_BUCKET: true
+          LOG_DIR: /tmp/bookvoice-smoke-s3
+          OUT_FILE: /tmp/bookvoice-smoke-output-s3.mp3
+        run: |
+          chmod +x scripts/smoke-phase4.sh
+          ./scripts/smoke-phase4.sh
+
+      - name: Upload object storage smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts-object-storage
+          path: |
+            /tmp/bookvoice-smoke-s3
+            /tmp/bookvoice-smoke-output-s3.mp3
           if-no-files-found: ignore

@@ -10,6 +10,10 @@ WAIT_SECS="${WAIT_SECS:-60}"
 TEST_TITLE="${TEST_TITLE:-Phase4 Smoke Test}"
 OUT_FILE="${OUT_FILE:-/tmp/bookvoice-smoke-output.mp3}"
 LOG_DIR="${LOG_DIR:-/tmp/bookvoice-smoke}"
+USE_OBJECT_STORAGE="${USE_OBJECT_STORAGE:-false}"
+S3_BUCKET="${S3_BUCKET:-bookvoice-dev}"
+S3_AUTO_CREATE_BUCKET="${S3_AUTO_CREATE_BUCKET:-true}"
+USER_ID="${USER_ID:-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
 mkdir -p "$LOG_DIR"
 
 API_LOG="$LOG_DIR/api.log"
@@ -17,6 +21,7 @@ WORKER_LOG="$LOG_DIR/worker.log"
 HEALTH_JSON="$LOG_DIR/health.json"
 BOOK_JSON="$LOG_DIR/book.json"
 BOOK_STATE_JSON="$LOG_DIR/book-state.json"
+DOWNLOAD_JSON="$LOG_DIR/download.json"
 
 cleanup() {
   if [[ -n "${API_PID:-}" ]]; then kill "$API_PID" 2>/dev/null || true; fi
@@ -33,12 +38,7 @@ need_cmd() {
 
 json_get() {
   local key="$1"
-  python3 - "$key" <<'PY'
-import json,sys
-key=sys.argv[1]
-obj=json.load(sys.stdin)
-print(obj[key])
-PY
+  python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$key"
 }
 
 wait_job_done() {
@@ -104,11 +104,27 @@ echo "[smoke] ensuring deps"
 npm install >/dev/null
 
 echo "[smoke] starting api on :${API_PORT}"
-PORT="$API_PORT" npm run start:api >"$API_LOG" 2>&1 &
+PORT="$API_PORT" \
+USE_OBJECT_STORAGE="$USE_OBJECT_STORAGE" \
+S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}" \
+S3_REGION="${S3_REGION:-us-east-1}" \
+S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-minioadmin}" \
+S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+S3_BUCKET="$S3_BUCKET" \
+S3_AUTO_CREATE_BUCKET="$S3_AUTO_CREATE_BUCKET" \
+npm run start:api >"$API_LOG" 2>&1 &
 API_PID=$!
 
-echo "[smoke] starting worker (MOCK_TTS=${MOCK_TTS})"
-MOCK_TTS="$MOCK_TTS" npm run start:worker >"$WORKER_LOG" 2>&1 &
+echo "[smoke] starting worker (MOCK_TTS=${MOCK_TTS}, USE_OBJECT_STORAGE=${USE_OBJECT_STORAGE})"
+MOCK_TTS="$MOCK_TTS" \
+USE_OBJECT_STORAGE="$USE_OBJECT_STORAGE" \
+S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}" \
+S3_REGION="${S3_REGION:-us-east-1}" \
+S3_ACCESS_KEY_ID="${S3_ACCESS_KEY_ID:-minioadmin}" \
+S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+S3_BUCKET="$S3_BUCKET" \
+S3_AUTO_CREATE_BUCKET="$S3_AUTO_CREATE_BUCKET" \
+npm run start:worker >"$WORKER_LOG" 2>&1 &
 WORKER_PID=$!
 
 echo "[smoke] waiting for api health"
@@ -128,10 +144,11 @@ if [[ ! -s "$HEALTH_JSON" ]]; then
   exit 1
 fi
 
-BOOK_PAYLOAD=$(cat <<'JSON'
+BOOK_PAYLOAD=$(cat <<JSON
 {
-  "title": "Phase4 Smoke Test",
-  "sourceText": "第一章\n今天天气很好，我哋开始测试。\n\n第二章\n而家进入 render 阶段。\n\n第三章\n下载接口都要通。"
+  "title": "${TEST_TITLE}",
+  "sourceText": "第一章\n今天天气很好，我哋开始测试。\n\n第二章\n而家进入 render 阶段。\n\n第三章\n下载接口都要通。",
+  "userId": "${USER_ID}"
 }
 JSON
 )
@@ -144,12 +161,13 @@ echo
 BOOK_ID="$(cat "$BOOK_JSON" | json_get id)"
 
 echo "[smoke] created book: ${BOOK_ID}"
+echo "[smoke] userId=${USER_ID}"
 
 for TYPE in parse tts render; do
   JOB_JSON="$LOG_DIR/${TYPE}-job.json"
   curl -sf "http://127.0.0.1:${API_PORT}/v1/jobs" \
     -H 'content-type: application/json' \
-    -d "{\"bookId\":\"${BOOK_ID}\",\"type\":\"${TYPE}\"}" >"$JOB_JSON"
+    -d "{\"bookId\":\"${BOOK_ID}\",\"type\":\"${TYPE}\",\"userId\":\"${USER_ID}\"}" >"$JOB_JSON"
   cat "$JOB_JSON"
   echo
   JOB_ID="$(cat "$JOB_JSON" | json_get id)"
@@ -168,12 +186,31 @@ if [[ -z "$RENDER_KEY" || "$RENDER_FORMAT" != "mp3" ]]; then
   exit 1
 fi
 
-curl -fL "http://127.0.0.1:${API_PORT}/v1/books/${BOOK_ID}/download" -o "$OUT_FILE"
+if [[ "$USE_OBJECT_STORAGE" == "true" ]]; then
+  curl -sf "http://127.0.0.1:${API_PORT}/v1/books/${BOOK_ID}/download" >"$DOWNLOAD_JSON"
+  cat "$DOWNLOAD_JSON"
+  echo
+  SIGNED_URL="$(cat "$DOWNLOAD_JSON" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("url") or "")')"
+  MODE="$(cat "$DOWNLOAD_JSON" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("mode") or "")')"
+  if [[ -z "$SIGNED_URL" || "$MODE" != "signed_url" ]]; then
+    echo "[smoke] invalid signed download response" >&2
+    exit 1
+  fi
+  curl -fL "$SIGNED_URL" -o "$OUT_FILE"
+else
+  curl -fL "http://127.0.0.1:${API_PORT}/v1/books/${BOOK_ID}/download" -o "$OUT_FILE"
+fi
+
 ls -lh "$OUT_FILE"
 ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 "$OUT_FILE"
 
 echo
-echo "[smoke] PASS"
+if [[ "$USE_OBJECT_STORAGE" == "true" ]]; then
+  echo "[smoke] PASS (object storage mode)"
+else
+  echo "[smoke] PASS (filesystem mode)"
+fi
 echo "[smoke] bookId=${BOOK_ID}"
+echo "[smoke] userId=${USER_ID}"
 echo "[smoke] output=${OUT_FILE}"
 echo "[smoke] logs=${LOG_DIR}"

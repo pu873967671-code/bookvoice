@@ -10,7 +10,7 @@ import { Worker } from 'bullmq';
 import pg from 'pg';
 import AdmZip from 'adm-zip';
 import he from 'he';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 const execFile = promisify(execFileCallback);
 const { Pool } = pg;
@@ -58,6 +58,7 @@ const s3Region = process.env.S3_REGION || 'us-east-1';
 const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID || '';
 const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY || '';
 const useObjectStorage = process.env.USE_OBJECT_STORAGE === 'true';
+const autoCreateBucket = process.env.S3_AUTO_CREATE_BUCKET !== 'false';
 
 const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const pool = new Pool({ connectionString: databaseUrl });
@@ -72,6 +73,7 @@ const s3 = useObjectStorage && s3Bucket && s3Endpoint && s3AccessKeyId && s3Secr
       }
     })
   : null;
+let bucketReadyPromise: Promise<void> | null = null;
 
 async function setJobState(jobId: string, status: 'queued' | 'running' | 'done' | 'failed', progress: number, errorMessage?: string) {
   await pool.query(
@@ -264,8 +266,38 @@ async function concatMp3Files(inputFiles: string[], outputFile: string) {
   }
 }
 
+function isMissingBucketError(error: unknown) {
+  const metadata = typeof error === 'object' && error !== null ? (error as { $metadata?: { httpStatusCode?: number } }).$metadata : undefined;
+  const name = typeof error === 'object' && error !== null ? (error as { name?: string }).name : undefined;
+  return metadata?.httpStatusCode === 404 || name === 'NotFound' || name === 'NoSuchBucket';
+}
+
+async function ensureBucketReady() {
+  if (!s3 || !s3Bucket) throw new Error('object_storage_not_configured');
+  if (bucketReadyPromise) return bucketReadyPromise;
+
+  bucketReadyPromise = (async () => {
+    try {
+      await s3.send(new HeadBucketCommand({ Bucket: s3Bucket }));
+    } catch (error) {
+      if (!isMissingBucketError(error)) throw error;
+      if (!autoCreateBucket) throw new Error(`bucket_missing:${s3Bucket}`);
+      await s3.send(new CreateBucketCommand({ Bucket: s3Bucket }));
+      await s3.send(new HeadBucketCommand({ Bucket: s3Bucket }));
+    }
+  })();
+
+  try {
+    await bucketReadyPromise;
+  } catch (error) {
+    bucketReadyPromise = null;
+    throw error;
+  }
+}
+
 async function uploadFileToObjectStorage(localPath: string, objectKey: string, contentType: string) {
   if (!s3 || !s3Bucket) throw new Error('object_storage_not_configured');
+  await ensureBucketReady();
   const body = await fs.readFile(localPath);
   await s3.send(
     new PutObjectCommand({
@@ -539,3 +571,4 @@ console.log('[worker] storageRoot:', storageRoot);
 console.log('[worker] azureVoice:', azureVoice);
 console.log('[worker] useObjectStorage:', useObjectStorage);
 console.log('[worker] s3Bucket:', s3Bucket || '');
+console.log('[worker] autoCreateBucket:', autoCreateBucket);

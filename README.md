@@ -25,9 +25,10 @@ Upload ebooks and convert them into audiobooks with AI TTS.
 - chapter audio rendered to local `storage/tts/<bookId>/chapter-xxx.mp3`
 - full book render via `ffmpeg` concat into `storage/renders/<bookId>.mp3`
 - optional MinIO / S3 object storage upload after render
+- auto-create bucket support for local/dev CI
 - download endpoint: `GET /v1/books/:id/download`
 - when `USE_OBJECT_STORAGE=true`, download endpoint returns signed URL JSON
-- GitHub Actions smoke test workflow included
+- GitHub Actions smoke test workflow included for both filesystem mode and object storage mode
 
 ## Quick start
 
@@ -117,10 +118,16 @@ Returns JSON like:
 
 ## Smoke test
 
-Run the end-to-end local smoke test:
+Run the end-to-end local smoke test in filesystem mode:
 
 ```bash
 ./scripts/smoke-phase4.sh
+```
+
+Run object storage mode:
+
+```bash
+USE_OBJECT_STORAGE=true S3_BUCKET=bookvoice-dev ./scripts/smoke-phase4.sh
 ```
 
 Useful overrides:
@@ -128,9 +135,12 @@ Useful overrides:
 ```bash
 API_PORT=3301 MOCK_TTS=true ./scripts/smoke-phase4.sh
 MOCK_TTS=false ./scripts/smoke-phase4.sh
+USE_OBJECT_STORAGE=true S3_AUTO_CREATE_BUCKET=true ./scripts/smoke-phase4.sh
 ```
 
-CI also runs `.github/workflows/smoke-test.yml` on push / PR.
+CI also runs `.github/workflows/smoke-test.yml` on push / PR in both modes.
+
+Smoke script now uses a fresh random `userId` by default, so repeated local/CI runs do not get blocked by accumulated quota usage.
 
 ## Azure TTS
 
@@ -158,6 +168,7 @@ S3_REGION=us-east-1
 S3_BUCKET=bookvoice-dev
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
+S3_AUTO_CREATE_BUCKET=true
 SIGNED_URL_EXPIRES_SEC=3600
 ```
 
@@ -165,6 +176,7 @@ Current behavior:
 - worker still renders local mp3 first
 - if object storage enabled, worker uploads rendered mp3 to S3/MinIO
 - API download endpoint returns a signed download URL JSON instead of direct file stream
+- missing bucket can be auto-created in local/dev mode
 
 ## Template repo notes
 
