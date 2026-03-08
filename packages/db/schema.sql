@@ -18,6 +18,8 @@ create table if not exists books (
   language text not null default 'zh-CN',
   status text not null default 'uploaded',
   total_chars int not null default 0,
+  render_object_key text,
+  render_format text,
   created_at timestamptz not null default now()
 );
 

@@ -1,12 +1,17 @@
 import 'dotenv/config';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { execFile as execFileCallback } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import IORedis from 'ioredis';
 import { Worker } from 'bullmq';
 import pg from 'pg';
 import AdmZip from 'adm-zip';
 import he from 'he';
 
+const execFile = promisify(execFileCallback);
 const { Pool } = pg;
 
 type JobType = 'parse' | 'tts' | 'render';
@@ -24,9 +29,28 @@ type ChapterInput = {
   text: string;
 };
 
+type ChapterRow = {
+  id: string;
+  chapter_index: number;
+  title: string | null;
+  text_content: string;
+};
+
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/bookvoice';
 const mockTts = process.env.MOCK_TTS !== 'false';
+const azureTtsKey = process.env.AZURE_TTS_KEY || '';
+const azureTtsRegion = process.env.AZURE_TTS_REGION || 'eastasia';
+const azureVoice = process.env.AZURE_TTS_VOICE || 'zh-CN-XiaoxiaoNeural';
+const azureRate = process.env.AZURE_TTS_RATE || '+0%';
+const azurePitch = process.env.AZURE_TTS_PITCH || '+0Hz';
+const ffmpegBin = process.env.FFMPEG_BIN || 'ffmpeg';
+const ffprobeBin = process.env.FFPROBE_BIN || 'ffprobe';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../..');
+const storageRoot = process.env.STORAGE_ROOT
+  ? path.resolve(process.env.STORAGE_ROOT)
+  : path.join(repoRoot, 'storage');
 
 const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const pool = new Pool({ connectionString: databaseUrl });
@@ -87,7 +111,7 @@ async function loadBookText(sourceObjectKey: string, sourceText: string | null) 
 
   const filePath = path.isAbsolute(sourceObjectKey)
     ? sourceObjectKey
-    : path.resolve(process.cwd(), sourceObjectKey);
+    : path.resolve(repoRoot, sourceObjectKey);
 
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.txt') {
@@ -113,6 +137,115 @@ async function loadBookText(sourceObjectKey: string, sourceText: string | null) 
   throw new Error(`unsupported_source_extension:${ext || 'none'}`);
 }
 
+function makeChapterFilename(index: number) {
+  return `chapter-${String(index).padStart(3, '0')}.mp3`;
+}
+
+function chapterStorageRelPath(bookId: string, index: number) {
+  return path.posix.join('tts', bookId, makeChapterFilename(index));
+}
+
+function chapterStorageAbsPath(bookId: string, index: number) {
+  return path.join(storageRoot, 'tts', bookId, makeChapterFilename(index));
+}
+
+function renderStorageRelPath(bookId: string) {
+  return path.posix.join('renders', `${bookId}.mp3`);
+}
+
+function renderStorageAbsPath(bookId: string) {
+  return path.join(storageRoot, 'renders', `${bookId}.mp3`);
+}
+
+async function ensureDirForFile(filePath: string) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+}
+
+function xmlEscape(input: string) {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function buildSsml(text: string) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<speak version="1.0" xml:lang="zh-CN" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts">
+  <voice name="${xmlEscape(azureVoice)}">
+    <prosody rate="${xmlEscape(azureRate)}" pitch="${xmlEscape(azurePitch)}">${xmlEscape(text)}</prosody>
+  </voice>
+</speak>`;
+}
+
+async function synthesizeAzureMp3(text: string, outPath: string) {
+  if (!azureTtsKey) throw new Error('azure_tts_key_missing');
+  const endpoint = `https://${azureTtsRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
+  const ssml = buildSsml(text);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': azureTtsKey,
+      'Content-Type': 'application/ssml+xml',
+      'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+      'User-Agent': 'bookvoice/0.1.0'
+    },
+    body: ssml
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`azure_tts_http_${response.status}:${body.slice(0, 200)}`);
+  }
+
+  const arr = await response.arrayBuffer();
+  await ensureDirForFile(outPath);
+  await fs.writeFile(outPath, Buffer.from(arr));
+}
+
+async function getAudioDurationSec(filePath: string) {
+  const { stdout } = await execFile(ffprobeBin, [
+    '-v', 'error',
+    '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1',
+    filePath
+  ]);
+
+  const duration = Math.ceil(Number.parseFloat(stdout.trim()) || 0);
+  return Math.max(1, duration);
+}
+
+async function generateMockMp3(text: string, outPath: string) {
+  const seconds = Math.max(3, Math.min(20, Math.ceil(text.length / 120)));
+  await ensureDirForFile(outPath);
+  await execFile(ffmpegBin, [
+    '-y',
+    '-f', 'lavfi',
+    '-i', `anullsrc=r=24000:cl=mono`,
+    '-t', String(seconds),
+    '-q:a', '9',
+    '-acodec', 'libmp3lame',
+    outPath
+  ]);
+}
+
+async function concatMp3Files(inputFiles: string[], outputFile: string) {
+  if (inputFiles.length === 0) throw new Error('no_audio_files_for_concat');
+  await ensureDirForFile(outputFile);
+
+  const listFile = path.join(os.tmpdir(), `bookvoice-concat-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+  const content = inputFiles.map((f) => `file '${f.replace(/'/g, `'\\''`)}'`).join('\n');
+  await fs.writeFile(listFile, `${content}\n`, 'utf8');
+
+  try {
+    await execFile(ffmpegBin, ['-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', outputFile]);
+  } finally {
+    await fs.rm(listFile, { force: true });
+  }
+}
+
 async function runParse(data: QueueJobData) {
   const { rows } = await pool.query<{
     source_object_key: string;
@@ -129,33 +262,32 @@ async function runParse(data: QueueJobData) {
   const chapters = splitIntoChapters(text);
   const totalChars = chapters.reduce((sum, c) => sum + c.text.length, 0);
 
-  await pool.query('begin');
+  const client = await pool.connect();
   try {
-    await pool.query(`delete from chapters where book_id = $1`, [data.bookId]);
+    await client.query('begin');
+    await client.query(`delete from chapters where book_id = $1`, [data.bookId]);
 
     for (const c of chapters) {
-      await pool.query(
+      await client.query(
         `insert into chapters(book_id, chapter_index, title, text_content, char_count)
          values($1, $2, $3, $4, $5)`,
         [data.bookId, c.index, c.title, c.text, c.text.length]
       );
     }
 
-    await pool.query(`update books set status = 'parsed', total_chars = $2 where id = $1`, [data.bookId, totalChars]);
-    await pool.query('commit');
+    await client.query(`update books set status = 'parsed', total_chars = $2 where id = $1`, [data.bookId, totalChars]);
+    await client.query('commit');
   } catch (error) {
-    await pool.query('rollback');
+    await client.query('rollback');
     throw error;
+  } finally {
+    client.release();
   }
 }
 
 async function runTTS(data: QueueJobData) {
-  const { rows: chapters } = await pool.query<{
-    id: string;
-    chapter_index: number;
-    text_content: string;
-  }>(
-    `select id, chapter_index, text_content
+  const { rows: chapters } = await pool.query<ChapterRow>(
+    `select id, chapter_index, title, text_content
      from chapters
      where book_id = $1
      order by chapter_index asc`,
@@ -164,24 +296,64 @@ async function runTTS(data: QueueJobData) {
 
   if (chapters.length === 0) throw new Error('no_chapters_for_tts');
 
-  // Phase 3: mock generation by default; Azure adapter hook reserved.
-  // Real Azure implementation can replace this section when AZURE_TTS_KEY is configured.
   for (const ch of chapters) {
-    const estimatedSec = Math.max(6, Math.round(ch.text_content.length / 4.5));
-    const audioUrl = mockTts
-      ? `mock://audio/${data.bookId}/chapter-${String(ch.chapter_index).padStart(3, '0')}.mp3`
-      : `pending://azure/${data.bookId}/chapter-${String(ch.chapter_index).padStart(3, '0')}`;
+    const outPath = chapterStorageAbsPath(data.bookId, ch.chapter_index);
+    const relPath = chapterStorageRelPath(data.bookId, ch.chapter_index);
+
+    if (mockTts) {
+      await generateMockMp3(ch.text_content, outPath);
+    } else {
+      await synthesizeAzureMp3(ch.text_content, outPath);
+    }
+
+    const durationSec = await getAudioDurationSec(outPath);
 
     await pool.query(
       `update chapters
        set audio_url = $2,
            duration_sec = $3
        where id = $1`,
-      [ch.id, audioUrl, estimatedSec]
+      [ch.id, relPath, durationSec]
     );
   }
 
   await pool.query(`update books set status = 'tts_done' where id = $1`, [data.bookId]);
+}
+
+async function runRender(data: QueueJobData) {
+  const { rows: chapters } = await pool.query<{
+    chapter_index: number;
+    audio_url: string | null;
+  }>(
+    `select chapter_index, audio_url
+     from chapters
+     where book_id = $1
+     order by chapter_index asc`,
+    [data.bookId]
+  );
+
+  if (chapters.length === 0) throw new Error('no_chapters_for_render');
+
+  const inputFiles = chapters.map((c) => {
+    if (!c.audio_url) throw new Error(`missing_audio_for_chapter_${c.chapter_index}`);
+    return path.resolve(storageRoot, c.audio_url);
+  });
+
+  for (const file of inputFiles) {
+    await fs.access(file);
+  }
+
+  const outputFile = renderStorageAbsPath(data.bookId);
+  await concatMp3Files(inputFiles, outputFile);
+
+  await pool.query(
+    `update books
+     set status = 'render_ready',
+         render_object_key = $2,
+         render_format = $3
+     where id = $1`,
+    [data.bookId, renderStorageRelPath(data.bookId), 'mp3']
+  );
 }
 
 async function refundTtsQuota(jobData: QueueJobData) {
@@ -278,18 +450,13 @@ async function markTtsConsume(jobData: QueueJobData) {
   }
 }
 
-async function runRender(data: QueueJobData) {
-  // Render placeholder (concat chapters/audio metadata in next phase)
-  await new Promise((r) => setTimeout(r, 300));
-  await pool.query(`update books set status = 'render_ready' where id = $1`, [data.bookId]);
-}
-
 function createWorker(queueName: JobType) {
   return new Worker(
     queueName,
     async (bullJob) => {
       const data = bullJob.data as QueueJobData;
 
+      await fs.mkdir(storageRoot, { recursive: true });
       await setJobState(data.jobId, 'running', 10);
       await bullJob.updateProgress(10);
 
@@ -332,3 +499,5 @@ createWorker('render');
 console.log('[worker] up with redis:', redisUrl);
 console.log('[worker] db:', databaseUrl);
 console.log('[worker] mockTts:', mockTts);
+console.log('[worker] storageRoot:', storageRoot);
+console.log('[worker] azureVoice:', azureVoice);

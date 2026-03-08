@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { Queue } from 'bullmq';
@@ -19,6 +22,8 @@ type BookRow = {
   source_text: string | null;
   language: string;
   total_chars: number;
+  render_object_key: string | null;
+  render_format: string | null;
   created_at: Date;
 };
 
@@ -35,6 +40,11 @@ type JobRow = {
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/bookvoice';
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../../..');
+const storageRoot = process.env.STORAGE_ROOT
+  ? path.resolve(process.env.STORAGE_ROOT)
+  : path.join(repoRoot, 'storage');
 
 const pool = new Pool({ connectionString: databaseUrl });
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
@@ -99,7 +109,7 @@ async function reserveTtsQuota(userId: string, bookId: string, charCost: number,
 
     const cycleMonth = getCycleMonthInShanghai();
     const [year, month] = cycleMonth.split('-').map(Number);
-    const resetAt = new Date(Date.UTC(year, month - 1, 1, -8, 0, 0)); // Beijing 00:00
+    const resetAt = new Date(Date.UTC(year, month - 1, 1, -8, 0, 0));
 
     await client.query(
       `insert into quota_cycles(user_id, cycle_month, reset_at)
@@ -167,6 +177,8 @@ const mapBook = (r: BookRow) => ({
   hasSourceText: Boolean(r.source_text),
   language: r.language,
   totalChars: r.total_chars,
+  renderObjectKey: r.render_object_key,
+  renderFormat: r.render_format,
   createdAt: r.created_at.toISOString()
 });
 
@@ -181,10 +193,14 @@ const mapJob = (r: JobRow) => ({
   updatedAt: r.updated_at.toISOString()
 });
 
+function safeFilename(input: string) {
+  return input.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() || 'bookvoice';
+}
+
 app.get('/health', async (_, res) => {
   try {
     await pool.query('select 1');
-    res.json({ ok: true, service: 'bookvoice-api', db: 'ok', ts: new Date().toISOString() });
+    res.json({ ok: true, service: 'bookvoice-api', db: 'ok', storageRoot, ts: new Date().toISOString() });
   } catch (error) {
     res.status(500).json({ ok: false, service: 'bookvoice-api', db: 'error', error: String(error) });
   }
@@ -202,7 +218,7 @@ app.post('/v1/books', async (req, res) => {
   const { rows } = await pool.query<BookRow>(
     `insert into books(id, user_id, title, source_object_key, source_text, language, total_chars, status)
      values($1, $2, $3, $4, $5, $6, $7, 'uploaded')
-     returning id, user_id, title, source_object_key, source_text, language, total_chars, created_at`,
+     returning id, user_id, title, source_object_key, source_text, language, total_chars, render_object_key, render_format, created_at`,
     [id, userId, parsed.data.title, sourceObjectKey, parsed.data.sourceText || null, parsed.data.language, estimatedChars]
   );
 
@@ -211,7 +227,7 @@ app.post('/v1/books', async (req, res) => {
 
 app.get('/v1/books/:bookId', async (req, res) => {
   const { rows } = await pool.query<BookRow>(
-    `select id, user_id, title, source_object_key, source_text, language, total_chars, created_at
+    `select id, user_id, title, source_object_key, source_text, language, total_chars, render_object_key, render_format, created_at
      from books where id = $1 limit 1`,
     [req.params.bookId]
   );
@@ -226,7 +242,7 @@ app.post('/v1/jobs', async (req, res) => {
 
   const userId = parsed.data.userId || (await ensureDefaultUser());
   const { rows: bookRows } = await pool.query<BookRow>(
-    `select id, user_id, title, source_object_key, source_text, language, total_chars, created_at
+    `select id, user_id, title, source_object_key, source_text, language, total_chars, render_object_key, render_format, created_at
      from books where id = $1 limit 1`,
     [parsed.data.bookId]
   );
@@ -280,9 +296,39 @@ app.get('/v1/jobs/:jobId', async (req, res) => {
   res.json(mapJob(rows[0]));
 });
 
+app.get('/v1/books/:bookId/download', async (req, res) => {
+  const { rows } = await pool.query<Pick<BookRow, 'id' | 'title' | 'render_object_key' | 'render_format'>>(
+    `select id, title, render_object_key, render_format
+     from books where id = $1 limit 1`,
+    [req.params.bookId]
+  );
+
+  const book = rows[0];
+  if (!book) return res.status(404).json({ error: 'book_not_found' });
+  if (!book.render_object_key) return res.status(409).json({ error: 'render_not_ready' });
+
+  const fullPath = path.resolve(storageRoot, book.render_object_key);
+  try {
+    await fs.access(fullPath);
+  } catch {
+    return res.status(404).json({ error: 'render_file_missing', fullPath });
+  }
+
+  const ext = book.render_format || path.extname(fullPath).replace(/^\./, '') || 'bin';
+  const downloadName = `${safeFilename(book.title)}.${ext}`;
+
+  if (ext === 'm3u8') {
+    return res.sendFile(fullPath);
+  }
+
+  return res.download(fullPath, downloadName);
+});
+
 const port = Number(process.env.PORT || 3000);
-app.listen(port, () => {
+app.listen(port, async () => {
+  await fs.mkdir(storageRoot, { recursive: true });
   console.log(`[api] listening on :${port}`);
   console.log(`[api] db=${databaseUrl}`);
   console.log(`[api] redis=${redisUrl}`);
+  console.log(`[api] storageRoot=${storageRoot}`);
 });
