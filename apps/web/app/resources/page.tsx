@@ -64,30 +64,41 @@ export default function ResourcesPage() {
           <h2 className="text-2xl font-semibold mb-4">绘本库 ({starterResources.length})</h2>
           <div className="grid gap-4">
             {starterResources.map((resource) => (
-              <div key={resource.id} className="rounded-2xl border border-zinc-100 bg-white p-6 shadow-sm">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold">{resource.title}</h3>
-                    <p className="mt-2 text-sm text-zinc-600">{resource.summary}</p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-600">{resource.category}</span>
-                      <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-600">
-                        {resource.ageRange === 'all' ? '全年龄' : `${resource.ageRange}岁`}
-                      </span>
-                      <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-600">{resource.recommendedMode}</span>
-                    </div>
-                    <TagList tags={resource.tags} />
-                  </div>
-                </div>
-                {resource.content && (
-                  <div className="mt-4 rounded-lg bg-zinc-50 p-4 text-sm text-zinc-700 leading-relaxed">
-                    {resource.content.slice(0, 150)}...
+              <div key={resource.id} className="rounded-2xl border border-zinc-100 bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                {resource.imageUrl && (
+                  <div className="aspect-[4/3] overflow-hidden">
+                    <img 
+                      src={resource.imageUrl} 
+                      alt={resource.imageAlt || resource.title}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 )}
-                <div className="mt-4 flex gap-3">
-                  <Link href="/generate" className="text-sm font-medium text-orange-600 hover:underline">
-                    播畀小朋友听 →
-                  </Link>
+                <div className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold">{resource.title}</h3>
+                      <p className="mt-2 text-sm text-zinc-600">{resource.summary}</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-600">{resource.category}</span>
+                        <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-600">
+                          {resource.ageRange === 'all' ? '全年龄' : `${resource.ageRange}岁`}
+                        </span>
+                        <span className="rounded-full bg-zinc-100 px-3 py-1 text-zinc-600">{resource.recommendedMode}</span>
+                      </div>
+                      <TagList tags={resource.tags} />
+                    </div>
+                  </div>
+                  {resource.content && (
+                    <div className="mt-4 rounded-lg bg-zinc-50 p-4 text-sm text-zinc-700 leading-relaxed">
+                      {resource.content.slice(0, 120)}...
+                    </div>
+                  )}
+                  <div className="mt-4 flex gap-3">
+                    <Link href="/generate" className="text-sm font-medium text-orange-600 hover:underline">
+                      播畀小朋友听 →
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}
