@@ -9,7 +9,9 @@
   "scripts": {
     "dev:api": "npm --workspace @bookvoice/api run dev",
     "dev:worker": "npm --workspace @bookvoice/worker run dev",
+    "dev:web": "npm --workspace @bookvoice/web run dev",
     "start:api": "npm --workspace @bookvoice/api run start",
-    "start:worker": "npm --workspace @bookvoice/worker run start"
+    "start:worker": "npm --workspace @bookvoice/worker run start",
+    "start:web": "npm --workspace @bookvoice/web run start"
   }
 }

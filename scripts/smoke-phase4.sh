@@ -4,16 +4,28 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-API_PORT="${API_PORT:-3301}"
+USE_OBJECT_STORAGE="${USE_OBJECT_STORAGE:-false}"
+DEFAULT_API_PORT="$(python3 - <<'PY'
+import random
+print(random.randint(3301, 3999))
+PY
+)"
+DEFAULT_REDIS_DB="$(python3 - <<'PY'
+import random
+print(random.randint(1, 15))
+PY
+)"
+API_PORT="${API_PORT:-$DEFAULT_API_PORT}"
+REDIS_URL="${REDIS_URL:-redis://localhost:6379/$DEFAULT_REDIS_DB}"
 MOCK_TTS="${MOCK_TTS:-true}"
 WAIT_SECS="${WAIT_SECS:-60}"
 TEST_TITLE="${TEST_TITLE:-Phase4 Smoke Test}"
 OUT_FILE="${OUT_FILE:-/tmp/bookvoice-smoke-output.mp3}"
 LOG_DIR="${LOG_DIR:-/tmp/bookvoice-smoke}"
-USE_OBJECT_STORAGE="${USE_OBJECT_STORAGE:-false}"
 S3_BUCKET="${S3_BUCKET:-bookvoice-dev}"
 S3_AUTO_CREATE_BUCKET="${S3_AUTO_CREATE_BUCKET:-true}"
 USER_ID="${USER_ID:-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
+RUN_ID="${RUN_ID:-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
 mkdir -p "$LOG_DIR"
 
 API_LOG="$LOG_DIR/api.log"
@@ -83,6 +95,7 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
+echo "[smoke] runId=${RUN_ID} apiPort=${API_PORT} redisUrl=${REDIS_URL}"
 echo "[smoke] starting infra"
 docker compose -f infra/docker-compose.yml up -d >/dev/null
 
@@ -112,6 +125,7 @@ npm install >/dev/null
 
 echo "[smoke] starting api on :${API_PORT}"
 PORT="$API_PORT" \
+REDIS_URL="$REDIS_URL" \
 USE_OBJECT_STORAGE="$USE_OBJECT_STORAGE" \
 S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}" \
 S3_REGION="${S3_REGION:-us-east-1}" \
@@ -120,10 +134,12 @@ S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-minioadmin}" \
 S3_BUCKET="$S3_BUCKET" \
 S3_AUTO_CREATE_BUCKET="$S3_AUTO_CREATE_BUCKET" \
 STORAGE_ROOT="${STORAGE_ROOT:-$ROOT_DIR/storage}" \
+BOOKVOICE_SMOKE_RUN_ID="$RUN_ID" \
 npm run start:api >"$API_LOG" 2>&1 &
 API_PID=$!
 
 echo "[smoke] starting worker (MOCK_TTS=${MOCK_TTS}, USE_OBJECT_STORAGE=${USE_OBJECT_STORAGE})"
+REDIS_URL="$REDIS_URL" \
 MOCK_TTS="$MOCK_TTS" \
 USE_OBJECT_STORAGE="$USE_OBJECT_STORAGE" \
 S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}" \
@@ -138,6 +154,12 @@ WORKER_PID=$!
 
 echo "[smoke] waiting for api health"
 for _ in $(seq 1 "$WAIT_SECS"); do
+  if ! kill -0 "$API_PID" 2>/dev/null; then
+    echo "[smoke] api process exited early" >&2
+    echo "--- api log ---" >&2
+    tail -100 "$API_LOG" >&2 || true
+    exit 1
+  fi
   if curl -sf "http://127.0.0.1:${API_PORT}/health" >"$HEALTH_JSON"; then
     cat "$HEALTH_JSON"
     echo
@@ -148,6 +170,14 @@ done
 
 if [[ ! -s "$HEALTH_JSON" ]]; then
   echo "[smoke] api health failed" >&2
+  echo "--- api log ---" >&2
+  tail -100 "$API_LOG" >&2 || true
+  exit 1
+fi
+
+HEALTH_USE_OBJECT_STORAGE="$(cat "$HEALTH_JSON" | python3 -c 'import sys,json; print(str(json.load(sys.stdin).get("useObjectStorage", False)).lower())')"
+if [[ "$HEALTH_USE_OBJECT_STORAGE" != "$USE_OBJECT_STORAGE" ]]; then
+  echo "[smoke] api health mismatch: expected useObjectStorage=${USE_OBJECT_STORAGE}, got ${HEALTH_USE_OBJECT_STORAGE}" >&2
   echo "--- api log ---" >&2
   tail -100 "$API_LOG" >&2 || true
   exit 1

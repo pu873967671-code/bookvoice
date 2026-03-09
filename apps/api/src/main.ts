@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
+
+// fetch is available globally in Node 18+
 import pg from 'pg';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -77,7 +79,17 @@ const queues: Record<JobType, Queue> = {
 };
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:3002',
+    'http://localhost:3003',
+    'http://172.19.218.137:3003',
+    'http://192.168.8.71:3003'
+  ],
+  credentials: true
+}));
 app.use(express.json({ limit: '5mb' }));
 
 const createBookSchema = z
@@ -388,8 +400,243 @@ app.get('/v1/books/:bookId/download', async (req, res) => {
   return res.download(fullPath, downloadName);
 });
 
+// LLM 转换端点（用于粤语转换助手）
+app.post('/v1/translate/cantonese', async (req, res) => {
+  const { text } = req.body;
+  
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'text_required' });
+  }
+
+  try {
+    const glmKey = process.env.GLM_API_KEY;
+    
+    if (!glmKey) {
+      return res.status(501).json({ 
+        error: 'glm_not_configured',
+        message: '请配置 GLM_API_KEY' 
+      });
+    }
+
+    // 调用智谱 GLM API
+    const glmRes = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${glmKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'glm-4-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `你是香港本地人，帮手将普通话转成最自然嘅粤语口语，可以适当加入香港潮语同网络用语。
+
+**用词替换：**
+- 东西 → 嘢
+- 小朋友 → 细路/小朋友
+- 市场 → 街市
+- 吃饭 → 食饭
+- 什么 → 咩
+- 怎么 → 点
+- 这个 → 呢个
+- 那个 → 嗰个
+- 这里 → 呢度
+- 那里 → 嗰度
+- 很/好 → 好/好X（加强语气）
+- 喜欢 → 钟意
+- 讨厌 → 憎
+- 麻烦 → 论尽/麻烦
+
+**香港潮语/网络用语（适当使用）：**
+- 很 → 超/X（如：超好、劲好）
+- 非常 → 爆/超级
+- 没关系 → 唔紧要/冇问题
+- 没事 → 冇嘢
+- 很厉害 → 劲/超劲/屈机
+- 很开心 → 超开心/开心到爆
+- 气死我了 → 激死我/嬲到爆
+- 太好了 → 正/超正
+- 傻瓜 → 论尽/傻更更
+- 漂亮 → 靓/索
+- 帅气 → 型/Chok
+- 可爱 → 得意/Cute
+- 无聊 → 冇厘瘾/闷到爆
+- 不管/无论如何 → 唔理
+- 真的 → 真系/真㗎
+- 很累 → 索/攰到爆
+- 很饿 → 饿到晕
+- 发呆 → 发吽哣/Hea
+- 随便 → 求其/是但
+- 很多人 → 多到爆/逼爆
+- 很便宜 → 平/超值
+- 很贵 → 贵到飞起/抢钱
+- 不知道 → 唔知/唔清楚
+- 怎么办 → 点算/点好
+- 完蛋了 → 完蛋/死火/ PK
+- 糟糕 → 冇眼睇/收皮
+- 很烦 → 烦到爆/激气
+- 没想到 → 谂唔到/估唔到
+- 好厉害 → 勁/正/屈機
+- 超赞 → 正/超正/Great
+- 不行 → 唔得/冇得
+- 等一下 → 等阵/阵间
+- 慢慢 → 慢慢/慢慢嚟
+
+**网络用语：**
+- XD → XD
+- 笑死 → 笑死/XD
+- 哈哈 → 哈哈/哈哈哈
+- 超好笑 → 超好笑/笑到肚痛
+- 真的假的 → 真系假㗎
+- 不是吧 → 唔系挂
+- 天啊 → 天呀/哗
+- 赞 → 赞/Like
+- 支持 → 支持/撑
+- 厉害 → 劲/Pro
+- 高手 → 高手/大神
+- 新手 → 新手/萌新
+
+**语法调整：**
+- 在 → 喺
+- 的 → 嘅
+- 了 → 咗
+- 着 → 住
+- 得 → 得
+
+**语气词（自然适量）：**
+- 句尾：呀、㗎、啰、啫、嘞、喇
+- 疑问：咩、呢
+- 感叹：呀、㗎、哇
+
+**例子：**
+输入 → 输出
+今天天气很好 → 今日天气超好呀
+你在干什么 → 你做紧咩呀
+这个东西太贵了 → 呢个嘢贵到飞起
+小朋友很可爱 → 细路超得意
+我累死了 → 我攰到爆呀
+气死我了 → 激死我呀
+太棒了 → 正！超正㗎
+这个东西很便宜 → 呢个嘢超值
+我不知道怎么办 → 我唔知点算好
+真的很厉害 → 真系好劲㗎
+
+只返回粤语结果，无解释`
+          },
+          {
+            role: 'user',
+            content: text
+          }
+        ],
+        temperature: 0.75,
+        max_tokens: 2000
+      })
+    });
+
+    if (!glmRes.ok) {
+      const error = await glmRes.text();
+      console.error('[translate] GLM error:', glmRes.status, error);
+      return res.status(glmRes.status).json({ 
+        error: 'glm_failed', 
+        detail: error 
+      });
+    }
+
+    const glmData = await glmRes.json();
+    const translated = glmData.choices?.[0]?.message?.content || text;
+
+    return res.json({ 
+      original: text,
+      translated,
+      model: 'glm-4-flash'
+    });
+
+  } catch (error) {
+    console.error('[translate] Error:', error);
+    return res.status(500).json({ error: 'translate_failed', detail: String(error) });
+  }
+});
+
+// 简单 TTS 端点（用于粤语转换助手）
+app.post('/v1/tts/speak', async (req, res) => {
+  const { text } = req.body;
+  
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'text_required' });
+  }
+
+  try {
+    // Mock 模式：返回浏览器可以播放的提示音
+    if (process.env.MOCK_TTS === 'true' || !process.env.AZURE_TTS_KEY) {
+      // 返回一个简单的音频数据（1秒静音）
+      const silentBase64 = '//uQxAAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
+      
+      return res.json({ 
+        audio: silentBase64,
+        mode: 'mock',
+        message: 'Mock 模式：请配置 AZURE_TTS_KEY 以使用真实语音'
+      });
+    }
+
+    // 真实 Azure TTS 调用
+    const azureKey = process.env.AZURE_TTS_KEY!;
+    const azureRegion = process.env.AZURE_TTS_REGION || 'eastasia';
+    const azureVoice = process.env.AZURE_TTS_VOICE || 'zh-HK-HiuGaaiNeural';
+    const azureRate = process.env.AZURE_TTS_RATE || '+0%';
+    const azurePitch = process.env.AZURE_TTS_PITCH || '+0Hz';
+
+    // 构建 SSML
+    const ssml = `
+      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-CN">
+        <voice name="${azureVoice}">
+          <prosody rate="${azureRate}" pitch="${azurePitch}">
+            ${text}
+          </prosody>
+        </voice>
+      </speak>
+    `.trim();
+
+    // 调用 Azure TTS API
+    const azureUrl = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
+    const azureRes = await fetch(azureUrl, {
+      method: 'POST',
+      headers: {
+        'Ocp-Apim-Subscription-Key': azureKey,
+        'Content-Type': 'application/ssml+xml',
+        'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
+        'User-Agent': 'ClawRead-TTS'
+      },
+      body: ssml
+    });
+
+    if (!azureRes.ok) {
+      const error = await azureRes.text();
+      console.error('[tts] Azure TTS error:', azureRes.status, error);
+      return res.status(azureRes.status).json({ 
+        error: 'azure_tts_failed', 
+        detail: error 
+      });
+    }
+
+    // 获取音频数据
+    const audioBuffer = await azureRes.arrayBuffer();
+    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+
+    return res.json({ 
+      audio: audioBase64,
+      mode: 'azure',
+      voice: azureVoice
+    });
+
+  } catch (error) {
+    console.error('[tts] Error:', error);
+    return res.status(500).json({ error: 'tts_failed', detail: String(error) });
+  }
+});
+
 const port = Number(process.env.PORT || 3000);
-app.listen(port, async () => {
+app.listen(port, '0.0.0.0', async () => {
   await fs.mkdir(storageRoot, { recursive: true });
   console.log(`[api] listening on :${port}`);
   console.log(`[api] db=${databaseUrl}`);

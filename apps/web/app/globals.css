@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #fffaf5;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --muted: #71717a;
+  --border: #e4e4e7;
+  --accent: #f97316;
+  --accent-soft: #fff7ed;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Noto Sans CJK SC',
+    'Microsoft YaHei',
+    sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: #fed7aa;
+  color: #7c2d12;
+}
+
+/* ---------- base typography ---------- */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.02em;
+}
+
+p {
+  word-break: break-word;
+}
+
+/* ---------- focus ---------- */
+
+:focus-visible {
+  outline: 2px solid #fb923c;
+  outline-offset: 2px;
+}
+
+/* ---------- small helpers ---------- */
+
+@layer components {
+  .page-shell {
+    @apply min-h-screen bg-[#fffaf5] text-zinc-900;
+  }
+
+  .page-container {
+    @apply mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8;
+  }
+
+  .card-base {
+    @apply rounded-2xl bg-white shadow-sm ring-1 ring-zinc-100;
+  }
+
+  .btn-primary {
+    @apply rounded-xl bg-orange-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-orange-600;
+  }
+
+  .btn-secondary {
+    @apply rounded-xl border border-zinc-300 px-5 py-3 text-sm font-medium transition hover:bg-white;
+  }
+
+  .btn-dark {
+    @apply rounded-xl border border-zinc-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800;
+  }
+
+  .input-base {
+    @apply w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm outline-none focus:border-orange-400;
+  }
+
+  .chip-base {
+    @apply rounded-full border border-orange-200 bg-white px-4 py-2 text-sm text-zinc-700 transition hover:border-orange-400 hover:bg-orange-50;
+  }
+
+  .section-copy {
+    @apply text-sm leading-7 text-zinc-600 sm:text-base;
+  }
+
+  .muted-copy {
+    @apply text-sm leading-7 text-zinc-500;
+  }
+}
+
+/* ---------- scrollbar ---------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fff7ed;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #fdba74;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #fb923c;
+}
