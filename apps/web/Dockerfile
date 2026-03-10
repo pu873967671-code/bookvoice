@@ -1,14 +1,20 @@
-# Web Dockerfile - Simple and direct
+# Web Dockerfile - Monorepo aware
 FROM node:20-alpine AS builder
 
-WORKDIR /app/apps/web
+WORKDIR /app
 
-# Copy web app files only
-COPY apps/web/package*.json ./
-COPY apps/web ./
+# Copy root package files for workspace
+COPY package*.json ./
+COPY apps/web/package*.json ./apps/web/
 
-# Install and build
-RUN npm ci && npm run build
+# Install dependencies
+RUN npm ci --workspace @bookvoice/web
+
+# Copy web app source
+COPY apps/web ./apps/web
+
+# Build
+RUN npm run build --workspace @bookvoice/web
 
 # Production image
 FROM node:20-alpine
