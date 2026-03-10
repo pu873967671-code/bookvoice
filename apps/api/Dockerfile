@@ -1,22 +1,26 @@
-# API Dockerfile - Force npm for monorepo
-FROM node:20-alpine
+# Bookvoice API - Clean Dockerfile for Zeabur
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Install ffmpeg
+# Install ffmpeg for audio processing
 RUN apk add --no-cache ffmpeg
 
-# Copy package files
+# Copy root package files
 COPY package.json package-lock.json ./
+COPY .npmrc ./
 
-# Copy workspace packages
+# Copy workspace package.json files
 COPY apps/api/package.json ./apps/api/
+COPY packages/db/package.json ./packages/db/
+
+# Copy packages source (needed for workspace references)
 COPY packages ./packages
 
-# Install dependencies with npm (not pnpm)
-RUN npm ci --include=dev
+# Install all dependencies
+RUN npm ci
 
-# Copy source code
+# Copy apps source
 COPY apps/api ./apps/api
 
 WORKDIR /app/apps/api
