@@ -1,4 +1,4 @@
-# Web Dockerfile - Copy all workspace files
+# Web Dockerfile - Fixed standalone paths
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -20,8 +20,9 @@ RUN npm run build
 # Production image
 FROM node:20-alpine
 
-WORKDIR /app/apps/web
+WORKDIR /app
 
+# Copy standalone output (note: .next/standalone is the root)
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./.next/static
 COPY --from=builder /app/apps/web/public ./public
