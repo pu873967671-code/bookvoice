@@ -1,0 +1,81 @@
+services:
+  # PostgreSQL 数据库
+  - name: postgres
+    type: postgresql
+    version: "16"
+
+  # Redis 队列
+  - name: redis
+    type: redis
+    version: "7"
+
+  # 后端 API
+  - name: api
+    type: node
+    build:
+      context: apps/api
+      dockerfile: Dockerfile
+    env:
+      DATABASE_URL: ${postgres.DATABASE_URL}
+      REDIS_URL: ${redis.REDIS_URL}
+      PORT: 3001
+      NODE_ENV: production
+      GLM_API_KEY: ${GLM_API_KEY}
+      GLM_API_URL: ${GLM_API_URL}
+      AZURE_TTS_KEY: ${AZURE_TTS_KEY}
+      AZURE_TTS_REGION: ${AZURE_TTS_REGION}
+      AZURE_TTS_VOICE: ${AZURE_TTS_VOICE}
+      AZURE_TTS_RATE: ${AZURE_TTS_RATE}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      USE_OBJECT_STORAGE: "true"
+      STORAGE_ROOT: /tmp/storage
+      FFMPEG_BIN: ffmpeg
+      FFPROBE_BIN: ffprobe
+    depends_on:
+      - postgres
+      - redis
+
+  # Worker (TTS 处理)
+  - name: worker
+    type: node
+    build:
+      context: apps/worker
+      dockerfile: Dockerfile
+    env:
+      DATABASE_URL: ${postgres.DATABASE_URL}
+      REDIS_URL: ${redis.REDIS_URL}
+      NODE_ENV: production
+      GLM_API_KEY: ${GLM_API_KEY}
+      GLM_API_URL: ${GLM_API_URL}
+      AZURE_TTS_KEY: ${AZURE_TTS_KEY}
+      AZURE_TTS_REGION: ${AZURE_TTS_REGION}
+      AZURE_TTS_VOICE: ${AZURE_TTS_VOICE}
+      AZURE_TTS_RATE: ${AZURE_TTS_RATE}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      USE_OBJECT_STORAGE: "true"
+      STORAGE_ROOT: /tmp/storage
+      FFMPEG_BIN: ffmpeg
+      FFPROBE_BIN: ffprobe
+    depends_on:
+      - postgres
+      - redis
+
+  # 前端 Web
+  - name: web
+    type: node
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+    env:
+      NEXT_PUBLIC_API_URL: ${api.ZEABUR_WEB_URL}
+      NODE_ENV: production
+    depends_on:
+      - api
