@@ -22,4 +22,4 @@ EXPOSE 8080
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 
-CMD ["sh", "-c", "npm start -- -p ${PORT:-8080}"]
+CMD ["npm", "start"]
