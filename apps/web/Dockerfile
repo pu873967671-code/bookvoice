@@ -1,28 +1,20 @@
-# Web Dockerfile - Fixed standalone paths
+# Web Dockerfile - Simple and direct
 FROM node:20-alpine AS builder
 
-WORKDIR /app
-
-# Copy root package files
-COPY package.json package-lock.json ./
-
-# Copy ALL workspace packages (important!)
-COPY apps ./apps
-COPY packages ./packages
-
-# Install all dependencies
-RUN npm ci
-
-# Build web app
 WORKDIR /app/apps/web
-RUN npm run build
+
+# Copy web app files only
+COPY apps/web/package*.json ./
+COPY apps/web ./
+
+# Install and build
+RUN npm ci && npm run build
 
 # Production image
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy standalone output (note: .next/standalone is the root)
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./.next/static
 COPY --from=builder /app/apps/web/public ./public
