@@ -1,24 +1,20 @@
-# Web Dockerfile - Force npm for monorepo
+# Web Dockerfile - Copy all workspace files
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy root package files
 COPY package.json package-lock.json ./
 
-# Copy workspace packages
-COPY apps/web/package.json ./apps/web/
+# Copy ALL workspace packages (important!)
+COPY apps ./apps
 COPY packages ./packages
 
-# Install dependencies with npm (not pnpm)
+# Install all dependencies
 RUN npm ci
 
-# Copy source code
-COPY apps/web ./apps/web
-
+# Build web app
 WORKDIR /app/apps/web
-
-# Build
 RUN npm run build
 
 # Production image
