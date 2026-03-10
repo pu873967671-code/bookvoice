@@ -1,18 +1,20 @@
-# Web Dockerfile - monorepo aware
+# Web Dockerfile - Force npm for monorepo
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy root package files
-COPY package*.json ./
-COPY package-lock.json ./
+# Copy package files
+COPY package.json package-lock.json ./
 
-# Copy all apps and packages
-COPY apps ./apps
+# Copy workspace packages
+COPY apps/web/package.json ./apps/web/
 COPY packages ./packages
 
-# Install all dependencies
+# Install dependencies with npm (not pnpm)
 RUN npm ci
+
+# Copy source code
+COPY apps/web ./apps/web
 
 WORKDIR /app/apps/web
 
