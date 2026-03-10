@@ -1,15 +1,20 @@
+# Web Dockerfile - monorepo aware
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy root package files
 COPY package*.json ./
+COPY package-lock.json ./
 
-# Install dependencies
+# Copy all apps and packages
+COPY apps ./apps
+COPY packages ./packages
+
+# Install all dependencies
 RUN npm ci
 
-# Copy source
-COPY . .
+WORKDIR /app/apps/web
 
 # Build
 RUN npm run build
@@ -17,11 +22,11 @@ RUN npm run build
 # Production image
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/apps/web
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./.next/static
+COPY --from=builder /app/apps/web/public ./public
 
 EXPOSE 3000
 

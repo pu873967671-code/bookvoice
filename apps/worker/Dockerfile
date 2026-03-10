@@ -1,3 +1,4 @@
+# Worker Dockerfile - monorepo aware
 FROM node:20-alpine
 
 WORKDIR /app
@@ -5,14 +6,18 @@ WORKDIR /app
 # Install ffmpeg for audio processing
 RUN apk add --no-cache ffmpeg
 
-# Copy package files
+# Copy root package files
 COPY package*.json ./
+COPY package-lock.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Copy all apps and packages
+COPY apps ./apps
+COPY packages ./packages
 
-# Copy source
-COPY . .
+# Install all dependencies from root
+RUN npm ci --include=dev
 
-# Start worker
-CMD ["npm", "start"]
+WORKDIR /app/apps/worker
+
+# Start
+CMD ["npx", "tsx", "src/main.ts"]

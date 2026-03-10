@@ -1,3 +1,4 @@
+# API Dockerfile - monorepo aware
 FROM node:20-alpine
 
 WORKDIR /app
@@ -5,17 +6,24 @@ WORKDIR /app
 # Install ffmpeg for audio processing
 RUN apk add --no-cache ffmpeg
 
-# Copy package files
+# Copy root package files
 COPY package*.json ./
+COPY package-lock.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Copy all apps and packages
+COPY apps ./apps
+COPY packages ./packages
 
-# Copy source
-COPY . .
+# Install all dependencies from root
+RUN npm ci --include=dev
+
+# Build if needed (TypeScript projects)
+# RUN npm run build --workspace @bookvoice/api
+
+WORKDIR /app/apps/api
 
 # Expose port
 EXPOSE 3001
 
 # Start
-CMD ["npm", "start"]
+CMD ["npx", "tsx", "src/main.ts"]
