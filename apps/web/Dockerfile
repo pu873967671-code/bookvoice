@@ -17,10 +17,9 @@ COPY apps/web ./apps/web
 WORKDIR /app/apps/web
 RUN npm run build
 
-EXPOSE 3000
+EXPOSE 8080
 
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
-ENV PORT=3000
 
 CMD ["npm", "start"]
