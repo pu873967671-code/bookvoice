@@ -1,0 +1,37 @@
+name: Deploy to Zeabur
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zeabur CLI
+        run: npm install -g @zeabur/cli
+
+      - name: Deploy API
+        env:
+          ZEABUR_TOKEN: ${{ secrets.ZEABUR_API_KEY }}
+        run: |
+          zeabur deploy --service-id=${{ secrets.ZEABUR_API_SERVICE_ID }} ||
+          echo "API service not configured yet"
+
+      - name: Deploy Worker
+        env:
+          ZEABUR_TOKEN: ${{ secrets.ZEABUR_API_KEY }}
+        run: |
+          zeabur deploy --service-id=${{ secrets.ZEABUR_WORKER_SERVICE_ID }} ||
+          echo "Worker service not configured yet"
+
+      - name: Deploy Web
+        env:
+          ZEABUR_TOKEN: ${{ secrets.ZEABUR_API_KEY }}
+        run: |
+          zeabur deploy --service-id=${{ secrets.ZEABUR_WEB_SERVICE_ID }} ||
+          echo "Web service not configured yet"
