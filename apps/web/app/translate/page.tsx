@@ -3,9 +3,8 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 
-const API_URL = typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
-  ? 'http://172.19.218.137:3004'  // WSL IP for Windows browser
-  : 'http://localhost:3004';      // localhost for WSL browser
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+const apiUrl = (path: string) => `${API_BASE}${path}`;
 
 // Mock 转换规则（后续替换为 LLM API）
 const cantoneseRules: Record<string, string> = {
@@ -104,30 +103,35 @@ export default function TranslatePage() {
       return;
     }
 
-    // 防抖：延迟 500ms 再请求
+    // 防抖：延迟 300ms 再请求
     const timer = setTimeout(async () => {
       setIsLoading(true);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
       try {
-        const res = await fetch(`${API_URL}/v1/translate/cantonese`, {
+        const res = await fetch(apiUrl('/v1/translate/cantonese'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: input })
+          body: JSON.stringify({ text: input }),
+          signal: controller.signal
         });
 
         if (res.ok) {
           const data = await res.json();
           setOutput(data.translated || input);
         } else {
-          // 降级到本地 mock
+          // API 不可用时才降级本地规则
           setOutput(mockTranslate(input));
         }
       } catch (error) {
-        // 降级到本地 mock
+        // 超时/网络错误时降级本地规则
         setOutput(mockTranslate(input));
       } finally {
+        clearTimeout(timeout);
         setIsLoading(false);
       }
-    }, 500);
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [input]);
@@ -143,7 +147,7 @@ export default function TranslatePage() {
     
     try {
       // 调用后端 TTS API
-      const res = await fetch(`${API_URL}/v1/tts/speak`, {
+      const res = await fetch(apiUrl('/v1/tts/speak'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: output })
