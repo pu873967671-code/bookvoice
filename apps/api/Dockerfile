@@ -25,6 +25,7 @@ COPY apps/api ./apps/api
 
 WORKDIR /app/apps/api
 
-EXPOSE 3001
+ENV PORT=3000
+EXPOSE 3000
 
 CMD ["npx", "tsx", "src/main.ts"]

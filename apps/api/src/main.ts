@@ -244,6 +244,15 @@ async function getSignedDownloadUrl(objectKey: string, downloadName: string) {
   );
 }
 
+app.get('/', (_, res) => {
+  res.status(200).json({
+    ok: true,
+    service: 'bookvoice-api',
+    message: 'alive',
+    ts: new Date().toISOString()
+  });
+});
+
 app.get('/health', async (_, res) => {
   try {
     await pool.query('select 1');
