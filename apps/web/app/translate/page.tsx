@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE}${path}`;
@@ -95,19 +95,26 @@ export default function TranslatePage() {
   const [output, setOutput] = useState('');
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const activeRequestIdRef = useRef(0);
 
-  // 实时转换（使用 LLM API）
+  // 实时转换（先本地秒出，再用 LLM 覆盖）
   useEffect(() => {
     if (!input.trim()) {
       setOutput('');
+      setIsLoading(false);
       return;
     }
 
-    // 防抖：延迟 300ms 再请求
+    // 先本地快速结果，避免“卡住”体感
+    setOutput(mockTranslate(input));
+
+    const requestId = ++activeRequestIdRef.current;
+
+    // 防抖：延迟 250ms 再请求模型
     const timer = setTimeout(async () => {
       setIsLoading(true);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), 4500);
 
       try {
         const res = await fetch(apiUrl('/v1/translate/cantonese'), {
@@ -119,19 +126,20 @@ export default function TranslatePage() {
 
         if (res.ok) {
           const data = await res.json();
-          setOutput(data.translated || input);
-        } else {
-          // API 不可用时才降级本地规则
-          setOutput(mockTranslate(input));
+          // 只应用最新一次请求结果，避免旧请求回写
+          if (activeRequestIdRef.current === requestId) {
+            setOutput(data.translated || input);
+          }
         }
       } catch (error) {
-        // 超时/网络错误时降级本地规则
-        setOutput(mockTranslate(input));
+        // 保持本地快速结果，不额外覆盖
       } finally {
         clearTimeout(timeout);
-        setIsLoading(false);
+        if (activeRequestIdRef.current === requestId) {
+          setIsLoading(false);
+        }
       }
-    }, 300);
+    }, 250);
 
     return () => clearTimeout(timer);
   }, [input]);
