@@ -208,7 +208,8 @@ export default function TranslatePage() {
       return;
     } catch (error) {
       console.error('[translate] mobile play failed, fallback to speechSynthesis:', error);
-      setSpeakError('手机播放失败，请再点一次；已切换系统语音兜底。');
+      const detail = error instanceof Error ? error.message : 'unknown_error';
+      setSpeakError(`手机播放失败（${detail}），请再点一次；已切换系统语音兜底。`);
 
       // 降级到浏览器 TTS
       const utterance = new SpeechSynthesisUtterance(output);

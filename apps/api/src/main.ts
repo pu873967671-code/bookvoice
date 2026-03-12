@@ -79,15 +79,29 @@ const queues: Record<JobType, Queue> = {
 };
 
 const app = express();
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://172.19.218.137:3003',
+  'http://192.168.8.71:3003'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:3002',
-    'http://localhost:3003',
-    'http://172.19.218.137:3003',
-    'http://192.168.8.71:3003'
-  ],
+  origin(origin, callback) {
+    // 允许非浏览器请求（curl/healthcheck）
+    if (!origin) return callback(null, true);
+
+    if (
+      allowedOrigins.includes(origin) ||
+      /\.zeabur\.app$/.test(new URL(origin).hostname)
+    ) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '5mb' }));
