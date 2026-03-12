@@ -60,6 +60,12 @@ const useObjectStorage = process.env.USE_OBJECT_STORAGE === 'true';
 const pool = new Pool({ connectionString: databaseUrl });
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 
+async function ensureSchema() {
+  const schemaPath = path.join(repoRoot, 'packages', 'db', 'schema.sql');
+  const sql = await fs.readFile(schemaPath, 'utf8');
+  await pool.query(sql);
+}
+
 const s3 = useObjectStorage && s3Bucket && s3Endpoint && s3AccessKeyId && s3SecretAccessKey
   ? new S3Client({
       region: s3Region,
@@ -644,6 +650,7 @@ app.post('/v1/tts/speak', async (req, res) => {
 const port = Number(process.env.PORT || 3000);
 app.listen(port, '0.0.0.0', async () => {
   await fs.mkdir(storageRoot, { recursive: true });
+  await ensureSchema();
   console.log(`[api] listening on :${port}`);
   console.log(`[api] db=${databaseUrl}`);
   console.log(`[api] redis=${redisUrl}`);

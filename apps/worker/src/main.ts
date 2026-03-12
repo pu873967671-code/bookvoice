@@ -62,6 +62,12 @@ const autoCreateBucket = process.env.S3_AUTO_CREATE_BUCKET !== 'false';
 
 const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const pool = new Pool({ connectionString: databaseUrl });
+
+async function ensureSchema() {
+  const schemaPath = path.join(repoRoot, 'packages', 'db', 'schema.sql');
+  const sql = await fs.readFile(schemaPath, 'utf8');
+  await pool.query(sql);
+}
 const s3 = useObjectStorage && s3Bucket && s3Endpoint && s3AccessKeyId && s3SecretAccessKey
   ? new S3Client({
       region: s3Region,
@@ -570,6 +576,8 @@ function createWorker(queueName: JobType) {
     { connection }
   );
 }
+
+await ensureSchema();
 
 createWorker('parse');
 createWorker('tts');
