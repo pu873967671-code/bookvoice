@@ -398,7 +398,13 @@ async function runTTS(data: QueueJobData) {
       await uploadFileToObjectStorage(outPath, objectKey, 'audio/mpeg');
     }
 
-    const durationSec = await getAudioDurationSec(outPath);
+    let durationSec = 0;
+    try {
+      durationSec = await getAudioDurationSec(outPath);
+    } catch {
+      // 部署环境可能无 ffprobe，按文本长度估算时长兜底
+      durationSec = Math.max(1, Math.ceil(ch.text_content.length / 5));
+    }
 
     await pool.query(
       `update chapters
