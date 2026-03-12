@@ -93,10 +93,15 @@ app.use(cors({
     // 允许非浏览器请求（curl/healthcheck）
     if (!origin) return callback(null, true);
 
-    if (
-      allowedOrigins.includes(origin) ||
-      /\.zeabur\.app$/.test(new URL(origin).hostname)
-    ) {
+    let isZeaburOrigin = false;
+    try {
+      isZeaburOrigin = /\.zeabur\.app$/.test(new URL(origin).hostname);
+    } catch {
+      // 某些 WebView/浏览器可能传入非标准 origin（如 "null"），直接按非白名单拒绝
+      isZeaburOrigin = false;
+    }
+
+    if (allowedOrigins.includes(origin) || isZeaburOrigin) {
       return callback(null, true);
     }
 
