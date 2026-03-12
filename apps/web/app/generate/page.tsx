@@ -54,7 +54,14 @@ export default function GeneratePage() {
       if (!jobRes.ok) {
         const err = await jobRes.json();
         if (err.error === 'quota_exceeded') {
-          throw new Error(`配额不足：剩余 ${err.remainChars} 字符`);
+          const remainBooks = Number(err.remainBooks ?? 0);
+          const remainChars = Number(err.remainChars ?? 0);
+
+          if (remainBooks < 1) {
+            throw new Error(`本月可生成次数已用完（剩余 ${remainChars} 字符）`);
+          }
+
+          throw new Error(`字符配额不足：剩余 ${remainChars} 字符`);
         }
         throw new Error('创建任务失败');
       }
