@@ -14,6 +14,7 @@ export default function GeneratePage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [bookId, setBookId] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleGenerate = async () => {
@@ -21,6 +22,7 @@ export default function GeneratePage() {
     
     setIsGenerating(true);
     setError(null);
+    setAudioUrl(null);
     
     try {
       // 1. 创建书籍
@@ -100,19 +102,47 @@ export default function GeneratePage() {
     setText(example);
   };
 
+  const resolveDownloadUrl = async () => {
+    if (!bookId) throw new Error('book_missing');
+
+    const endpoint = apiUrl(`/v1/books/${bookId}/download`);
+    const res = await fetch(endpoint);
+    if (!res.ok) throw new Error(`download_api_${res.status}`);
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      if (data?.url) return data.url as string;
+      if (data?.mode === 'signed_url' && data?.url) return data.url as string;
+      throw new Error('download_url_missing');
+    }
+
+    // 非 JSON 代表 API 直接返回音频文件
+    return endpoint;
+  };
+
   const handleDownload = async () => {
     if (!bookId) return;
     try {
-      const res = await fetch(apiUrl(`/v1/books/${bookId}/download`));
-      const data = await res.json();
-      
-      if (data.mode === 'signed_url') {
-        window.open(data.url, '_blank');
-      } else if (data.url) {
-        window.open(data.url, '_blank');
-      }
-    } catch (err) {
+      const url = await resolveDownloadUrl();
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.click();
+    } catch {
       setError('下载失败');
+    }
+  };
+
+  const handlePlay = async () => {
+    if (!bookId) return;
+    try {
+      const url = await resolveDownloadUrl();
+      setAudioUrl(url);
+      setError(null);
+    } catch {
+      setError('播放失败');
     }
   };
 
@@ -192,7 +222,13 @@ export default function GeneratePage() {
                   </h3>
                   
                   {jobStatus === 'done' && (
-                    <div className="mt-4 flex gap-3">
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        onClick={handlePlay}
+                        className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+                      >
+                        在线播放
+                      </button>
                       <button
                         onClick={handleDownload}
                         className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
@@ -204,12 +240,18 @@ export default function GeneratePage() {
                           setJobId(null);
                           setJobStatus(null);
                           setBookId(null);
+                          setAudioUrl(null);
                         }}
                         className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                       >
                         重新生成
                       </button>
                     </div>
+                    {audioUrl && (
+                      <div className="mt-4">
+                        <audio controls src={audioUrl} className="w-full" preload="none" />
+                      </div>
+                    )}
                   )}
                 </div>
               )}
