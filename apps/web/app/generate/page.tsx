@@ -222,36 +222,38 @@ export default function GeneratePage() {
                   </h3>
                   
                   {jobStatus === 'done' && (
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        onClick={handlePlay}
-                        className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
-                      >
-                        在线播放
-                      </button>
-                      <button
-                        onClick={handleDownload}
-                        className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                      >
-                        下载音频
-                      </button>
-                      <button
-                        onClick={() => {
-                          setJobId(null);
-                          setJobStatus(null);
-                          setBookId(null);
-                          setAudioUrl(null);
-                        }}
-                        className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-                      >
-                        重新生成
-                      </button>
-                    </div>
-                    {audioUrl && (
-                      <div className="mt-4">
-                        <audio controls src={audioUrl} className="w-full" preload="none" />
+                    <>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          onClick={handlePlay}
+                          className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+                        >
+                          在线播放
+                        </button>
+                        <button
+                          onClick={handleDownload}
+                          className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                        >
+                          下载音频
+                        </button>
+                        <button
+                          onClick={() => {
+                            setJobId(null);
+                            setJobStatus(null);
+                            setBookId(null);
+                            setAudioUrl(null);
+                          }}
+                          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                        >
+                          重新生成
+                        </button>
                       </div>
-                    )}
+                      {audioUrl && (
+                        <div className="mt-4">
+                          <audio controls src={audioUrl} className="w-full" preload="none" />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
