@@ -5,9 +5,8 @@ import { useState, useEffect } from 'react';
 import { starterResources } from '../../data/resources';
 import { starterMoments, recommendedMomentIds } from '../../data/moments';
 
-const API_URL = typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
-  ? 'http://172.19.218.137:3004'  // WSL IP for Windows browser
-  : 'http://localhost:3004';      // localhost for WSL browser
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+const apiUrl = (path: string) => `${API_BASE}${path}`;
 
 export default function GeneratePage() {
   const [text, setText] = useState('');
@@ -25,7 +24,7 @@ export default function GeneratePage() {
     
     try {
       // 1. 创建书籍
-      const bookRes = await fetch(`${API_URL}/v1/books`, {
+      const bookRes = await fetch(apiUrl('/v1/books'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -41,7 +40,7 @@ export default function GeneratePage() {
       setBookId(book.id);
       
       // 2. 创建 TTS 任务
-      const jobRes = await fetch(`${API_URL}/v1/jobs`, {
+      const jobRes = await fetch(apiUrl('/v1/jobs'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -74,7 +73,7 @@ export default function GeneratePage() {
 
     const poll = async () => {
       try {
-        const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
+        const res = await fetch(apiUrl(`/v1/jobs/${jobId}`));
         const job = await res.json();
         setJobStatus(job.status);
         
@@ -104,7 +103,7 @@ export default function GeneratePage() {
   const handleDownload = async () => {
     if (!bookId) return;
     try {
-      const res = await fetch(`${API_URL}/v1/books/${bookId}/download`);
+      const res = await fetch(apiUrl(`/v1/books/${bookId}/download`));
       const data = await res.json();
       
       if (data.mode === 'signed_url') {
