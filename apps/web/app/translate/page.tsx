@@ -170,7 +170,8 @@ export default function TranslatePage() {
       // 手机浏览器要同一个 audio 元素 + playsInline 更稳定
       const audio = audioRef.current || new Audio();
       audioRef.current = audio;
-      audio.playsInline = true;
+      // 某些 TS DOM lib 无 playsInline 属性声明，改用 attribute 兼容
+      audio.setAttribute('playsinline', 'true');
       audio.preload = 'auto';
 
       const res = await fetch(apiUrl('/v1/tts/speak'), {
