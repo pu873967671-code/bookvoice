@@ -359,13 +359,26 @@ async function runParse(data: QueueJobData) {
 }
 
 async function runTTS(data: QueueJobData) {
-  const { rows: chapters } = await pool.query<ChapterRow>(
+  let { rows: chapters } = await pool.query<ChapterRow>(
     `select id, chapter_index, title, text_content
      from chapters
      where book_id = $1
      order by chapter_index asc`,
     [data.bookId]
   );
+
+  // 兼容前端直接创建 tts 任务（未先 parse）
+  if (chapters.length === 0) {
+    await runParse(data);
+    const result = await pool.query<ChapterRow>(
+      `select id, chapter_index, title, text_content
+       from chapters
+       where book_id = $1
+       order by chapter_index asc`,
+      [data.bookId]
+    );
+    chapters = result.rows;
+  }
 
   if (chapters.length === 0) throw new Error('no_chapters_for_tts');
 
