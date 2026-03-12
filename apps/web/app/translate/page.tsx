@@ -95,7 +95,10 @@ export default function TranslatePage() {
   const [output, setOutput] = useState('');
   const [copied, setCopied] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [speakError, setSpeakError] = useState('');
   const activeRequestIdRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
   // 实时转换（先本地秒出，再用 LLM 覆盖）
   useEffect(() => {
@@ -144,6 +147,14 @@ export default function TranslatePage() {
     return () => clearTimeout(timer);
   }, [input]);
 
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+    };
+  }, []);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(output);
     setCopied(true);
@@ -152,28 +163,52 @@ export default function TranslatePage() {
 
   const handleSpeak = async () => {
     if (!output) return;
-    
+
+    setSpeakError('');
+
     try {
-      // 调用后端 TTS API
+      // 手机浏览器要同一个 audio 元素 + playsInline 更稳定
+      const audio = audioRef.current || new Audio();
+      audioRef.current = audio;
+      audio.playsInline = true;
+      audio.preload = 'auto';
+
       const res = await fetch(apiUrl('/v1/tts/speak'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: output })
       });
-      
-      if (res.ok) {
-        const data = await res.json();
-        // 播放音频
-        const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
-        audio.play();
-      } else {
-        // 降级到浏览器 TTS
-        const utterance = new SpeechSynthesisUtterance(output);
-        utterance.lang = 'zh-HK';
-        utterance.rate = 0.9;
-        speechSynthesis.speak(utterance);
+
+      if (!res.ok) {
+        throw new Error(`tts_http_${res.status}`);
       }
+
+      const data = await res.json();
+      if (!data?.audio) {
+        throw new Error('tts_audio_empty');
+      }
+
+      // base64 -> blob URL，移动端比 data URL 更稳
+      const binary = atob(data.audio);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+
+      const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+      objectUrlRef.current = objectUrl;
+      audio.src = objectUrl;
+      audio.load();
+      await audio.play();
+      return;
     } catch (error) {
+      console.error('[translate] mobile play failed, fallback to speechSynthesis:', error);
+      setSpeakError('手机播放失败，请再点一次；已切换系统语音兜底。');
+
       // 降级到浏览器 TTS
       const utterance = new SpeechSynthesisUtterance(output);
       utterance.lang = 'zh-HK';
@@ -268,6 +303,10 @@ export default function TranslatePage() {
                   </div>
                 )}
               </div>
+              <audio ref={audioRef} playsInline className="hidden" />
+              {speakError && (
+                <div className="mt-2 text-sm text-amber-600">{speakError}</div>
+              )}
               <div className="mt-2 text-sm text-zinc-500">
                 {output.length} 字符
               </div>
