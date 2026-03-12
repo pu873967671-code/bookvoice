@@ -39,7 +39,8 @@ type ChapterRow = {
 
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/bookvoice';
-const mockTts = process.env.MOCK_TTS !== 'false';
+// 生产环境默认走 Azure，只有显式 MOCK_TTS=true 才使用 ffmpeg mock
+const mockTts = process.env.MOCK_TTS === 'true';
 const azureTtsKey = process.env.AZURE_TTS_KEY || '';
 const azureTtsRegion = process.env.AZURE_TTS_REGION || 'eastasia';
 const azureVoice = process.env.AZURE_TTS_VOICE || 'zh-CN-XiaoxiaoNeural';
