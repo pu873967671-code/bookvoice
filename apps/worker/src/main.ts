@@ -6,7 +6,8 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import IORedis from 'ioredis';
-import { Worker } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
+import { v4 as uuidv4 } from 'uuid';
 import pg from 'pg';
 import AdmZip from 'adm-zip';
 import he from 'he';
@@ -418,6 +419,21 @@ async function runTTS(data: QueueJobData) {
   }
 
   await pool.query(`update books set status = 'tts_done' where id = $1`, [data.bookId]);
+
+  // TTS 完成后自动触发 render 任务
+  const renderJobId = uuidv4();
+  const renderQueue = new Queue('render', { connection });
+  await renderQueue.add(
+    `render-book-${data.bookId}`,
+    {
+      jobId: renderJobId,
+      userId: data.userId,
+      bookId: data.bookId,
+      type: 'render'
+    },
+    { jobId: renderJobId, attempts: 3, removeOnComplete: 50, removeOnFail: 200 }
+  );
+  console.log(`[worker] auto-triggered render job`, { jobId: renderJobId, bookId: data.bookId });
 }
 
 async function runRender(data: QueueJobData) {
