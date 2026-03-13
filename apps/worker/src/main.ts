@@ -272,6 +272,18 @@ async function concatMp3Files(inputFiles: string[], outputFile: string) {
   if (inputFiles.length === 0) throw new Error('no_audio_files_for_concat');
   await ensureDirForFile(outputFile);
 
+  // Mock 模式：直接拼接 MP3 文件（MP3 可以直接连接）
+  if (mockTts) {
+    const buffers: Buffer[] = [];
+    for (const file of inputFiles) {
+      const buf = await fs.readFile(file);
+      buffers.push(buf);
+    }
+    await fs.writeFile(outputFile, Buffer.concat(buffers));
+    return;
+  }
+
+  // 真实模式：使用 ffmpeg concat
   const listFile = path.join(os.tmpdir(), `bookvoice-concat-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
   const content = inputFiles.map((f) => `file '${f.replace(/'/g, `'\\''`)}'`).join('\n');
   await fs.writeFile(listFile, `${content}\n`, 'utf8');
