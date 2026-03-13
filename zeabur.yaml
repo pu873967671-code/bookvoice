@@ -25,3 +25,4 @@ services:
       dockerfile: apps/worker/Dockerfile
     env:
       NODE_ENV: production
+      MOCK_TTS: "true"
