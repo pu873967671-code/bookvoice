@@ -418,10 +418,6 @@ async function runTTS(data: QueueJobData) {
   }
 
   await pool.query(`update books set status = 'tts_done' where id = $1`, [data.bookId]);
-
-  // TTS 完成后自动执行 render
-  console.log(`[worker] tts done, auto-triggering render for book ${data.bookId}`);
-  await runRender(data);
 }
 
 async function runRender(data: QueueJobData) {

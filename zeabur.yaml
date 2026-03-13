@@ -1,9 +1,27 @@
 services:
-  # Web 前端 - 强制在 apps/web 目录构建
+  # Web 前端
   - name: web
     type: node
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    env:
+      NODE_ENV: production
+
+  # API 服务
+  - name: api
+    type: node
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env:
+      NODE_ENV: production
+
+  # Worker 服务（需要 ffmpeg）
+  - name: worker
+    type: node
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
     env:
       NODE_ENV: production

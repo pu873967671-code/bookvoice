@@ -355,6 +355,36 @@ app.post('/v1/jobs', async (req, res) => {
     { jobId: id, attempts: 3, removeOnComplete: 50, removeOnFail: 200 }
   );
 
+  // TTS job 创建后，自动创建 render job（依赖 TTS job 完成）
+  if (parsed.data.type === 'tts') {
+    const renderJobId = uuidv4();
+    await pool.query(
+      `insert into jobs(id, user_id, book_id, job_type, status, progress)
+       values($1, $2, $3, 'render', 'queued', 0)`,
+      [renderJobId, userId, parsed.data.bookId]
+    );
+
+    await queues.render.add(
+      `render-book-${parsed.data.bookId}`,
+      {
+        jobId: renderJobId,
+        userId,
+        bookId: parsed.data.bookId,
+        type: 'render'
+      },
+      { 
+        jobId: renderJobId, 
+        attempts: 3, 
+        removeOnComplete: 50, 
+        removeOnFail: 200,
+        // 等待 TTS job 完成后才执行
+        dependencies: [{ jobId: id }]
+      }
+    );
+    
+    console.log(`[api] auto-created render job ${renderJobId} for book ${parsed.data.bookId}`);
+  }
+
   res.status(201).json(mapJob(rows[0]));
 });
 
