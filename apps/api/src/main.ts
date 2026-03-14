@@ -76,7 +76,7 @@ const s3 = useObjectStorage && s3Bucket && s3Endpoint && s3AccessKeyId && s3Secr
         secretAccessKey: s3SecretAccessKey
       }
     })
-  : null;
+  : undefined;
 
 const queues: Record<JobType, Queue> = {
   parse: new Queue('parse', { connection: redis }),
