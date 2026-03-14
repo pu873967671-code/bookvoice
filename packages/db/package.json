@@ -1,5 +1,5 @@
 {
-  "name": "@bookvoice/db",
+  "name": "@clawread/db",
   "version": "0.1.0",
   "private": true,
   "main": "schema.sql"

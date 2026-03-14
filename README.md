@@ -1,6 +1,6 @@
-# bookvoice
+# clawread
 
-> GitHub template repo: click **Use this template** to create your own BookVoice app.
+> GitHub template repo: click **Use this template** to create your own ClawRead app.
 
 Upload ebooks and convert them into audiobooks with AI TTS.
 
@@ -34,7 +34,7 @@ Upload ebooks and convert them into audiobooks with AI TTS.
 ## Quick start
 
 ```bash
-cd /home/pupu/.openclaw/workspace/bookvoice
+cd /home/pupu/.openclaw/workspace/clawread
 cp .env.example .env
 ./scripts/run-local.sh
 ```
@@ -128,7 +128,7 @@ Run the end-to-end local smoke test in filesystem mode:
 Run object storage mode:
 
 ```bash
-USE_OBJECT_STORAGE=true S3_BUCKET=bookvoice-dev ./scripts/smoke-phase4.sh
+USE_OBJECT_STORAGE=true S3_BUCKET=clawread-dev ./scripts/smoke-phase4.sh
 ```
 
 Useful overrides:
@@ -166,7 +166,7 @@ To enable object storage upload + signed URL download:
 USE_OBJECT_STORAGE=true
 S3_ENDPOINT=http://localhost:9000
 S3_REGION=us-east-1
-S3_BUCKET=bookvoice-dev
+S3_BUCKET=clawread-dev
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 S3_AUTO_CREATE_BUCKET=true

@@ -1,4 +1,4 @@
-# BookVoice 部署配置清单
+# ClawRead 部署配置清单
 
 ## 服务列表（5个）
 
@@ -53,7 +53,7 @@ NODE_ENV=production
 - Add Service → Prebuilt → Redis 7
 
 ### 3. 添加 API
-- Add Service → Git → pu873967671-code/bookvoice
+- Add Service → Git → pu873967671-code/clawread
 - Name: `api`
 - Root Directory: `apps/api`
 - Build Command: `npm ci --include=dev`
@@ -63,7 +63,7 @@ NODE_ENV=production
 - Deploy
 
 ### 4. 添加 Worker
-- Add Service → Git → pu873967671-code/bookvoice
+- Add Service → Git → pu873967671-code/clawread
 - Name: `worker`
 - Root Directory: `apps/worker`
 - Build Command: `npm ci --include=dev`
@@ -72,7 +72,7 @@ NODE_ENV=production
 - Deploy
 
 ### 5. 添加 Web
-- Add Service → Git → pu873967671-code/bookvoice
+- Add Service → Git → pu873967671-code/clawread
 - Name: `web`
 - Root Directory: `apps/web`
 - Build Command: `npm ci && npm run build`

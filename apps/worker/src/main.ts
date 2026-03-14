@@ -38,7 +38,7 @@ type ChapterRow = {
 };
 
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/bookvoice';
+const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/clawread';
 // 生产环境默认走 Azure，只有显式 MOCK_TTS=true 才使用 ffmpeg mock
 const mockTts = process.env.MOCK_TTS === 'true';
 const azureTtsKey = process.env.AZURE_TTS_KEY || '';
@@ -221,7 +221,7 @@ async function synthesizeAzureMp3(text: string, outPath: string) {
       'Ocp-Apim-Subscription-Key': azureTtsKey,
       'Content-Type': 'application/ssml+xml',
       'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
-      'User-Agent': 'bookvoice/0.1.0'
+      'User-Agent': 'clawread/0.1.0'
     },
     body: ssml
   });
@@ -284,7 +284,7 @@ async function concatMp3Files(inputFiles: string[], outputFile: string) {
   }
 
   // 真实模式：使用 ffmpeg concat
-  const listFile = path.join(os.tmpdir(), `bookvoice-concat-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+  const listFile = path.join(os.tmpdir(), `clawread-concat-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
   const content = inputFiles.map((f) => `file '${f.replace(/'/g, `'\\''`)}'`).join('\n');
   await fs.writeFile(listFile, `${content}\n`, 'utf8');
 

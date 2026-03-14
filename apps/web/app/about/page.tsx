@@ -90,7 +90,7 @@ export default function AboutPage() {
           </p>
           <div className="mt-4 space-y-2 text-sm">
             <p className="text-zinc-600">
-              GitHub: <a href="https://github.com/pu873967671-code/bookvoice" className="text-orange-600 hover:underline">pu873967671-code/bookvoice</a>
+              GitHub: <a href="https://github.com/pu873967671-code/clawread" className="text-orange-600 hover:underline">pu873967671-code/clawread</a>
             </p>
           </div>
         </section>

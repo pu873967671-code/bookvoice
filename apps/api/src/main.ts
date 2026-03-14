@@ -42,7 +42,7 @@ type JobRow = {
   updated_at: Date;
 };
 
-const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/bookvoice';
+const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/clawread';
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -133,7 +133,7 @@ const ensureDefaultUser = async () => {
     `insert into users(id, email, plan, timezone)
      values($1, $2, 'free', 'Asia/Shanghai')
      on conflict (id) do nothing`,
-    [userId, 'solo@bookvoice.local']
+    [userId, 'solo@clawread.local']
   );
   return userId;
 };
@@ -230,7 +230,7 @@ const mapJob = (r: JobRow) => ({
 });
 
 function safeFilename(input: string) {
-  return input.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() || 'bookvoice';
+  return input.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim() || 'clawread';
 }
 
 async function getSignedDownloadUrl(objectKey: string, downloadName: string) {
@@ -250,7 +250,7 @@ async function getSignedDownloadUrl(objectKey: string, downloadName: string) {
 app.get('/', (_, res) => {
   res.status(200).json({
     ok: true,
-    service: 'bookvoice-api',
+    service: 'clawread-api',
     message: 'alive',
     ts: new Date().toISOString()
   });
@@ -261,7 +261,7 @@ app.get('/health', async (_, res) => {
     await pool.query('select 1');
     res.json({
       ok: true,
-      service: 'bookvoice-api',
+      service: 'clawread-api',
       db: 'ok',
       storageRoot,
       useObjectStorage,
@@ -269,7 +269,7 @@ app.get('/health', async (_, res) => {
       ts: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ ok: false, service: 'bookvoice-api', db: 'error', error: String(error) });
+    res.status(500).json({ ok: false, service: 'clawread-api', db: 'error', error: String(error) });
   }
 });
 
@@ -282,7 +282,7 @@ app.post('/v1/books', async (req, res) => {
     `insert into users(id, email, plan, timezone)
      values($1, $2, 'free', 'Asia/Shanghai')
      on conflict (id) do nothing`,
-    [userId, `user-${userId}@bookvoice.local`]
+    [userId, `user-${userId}@clawread.local`]
   );
   const id = uuidv4();
   const sourceObjectKey = parsed.data.sourceObjectKey || `inline://${id}.txt`;
