@@ -37,7 +37,7 @@ USE_OBJECT_STORAGE=false
 STORAGE_ROOT=/data/storage
 FFMPEG_BIN=ffmpeg
 FFPROBE_BIN=ffprobe
-MOCK_TTS=true
+MOCK_TTS=false
 ```
 
 ### Web
