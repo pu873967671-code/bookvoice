@@ -439,6 +439,30 @@ async function runTTS(data: QueueJobData) {
 }
 
 async function runRender(data: QueueJobData) {
+  // 等待 TTS job 完成（最多等待 5 分钟）
+  const maxWaitMs = 5 * 60 * 1000;
+  const pollIntervalMs = 2000;
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    const { rows: ttsJobs } = await pool.query<{ status: string }>(
+      `select status from jobs where book_id = $1 and job_type = 'tts' order by created_at desc limit 1`,
+      [data.bookId]
+    );
+    
+    if (ttsJobs.length > 0 && ttsJobs[0].status === 'done') {
+      console.log(`[render] TTS job completed for book ${data.bookId}, starting render`);
+      break;
+    }
+    
+    if (ttsJobs.length > 0 && ttsJobs[0].status === 'failed') {
+      throw new Error('tts_job_failed');
+    }
+    
+    console.log(`[render] Waiting for TTS job to complete for book ${data.bookId}...`);
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+  }
+
   const { rows: chapters } = await pool.query<{
     chapter_index: number;
     audio_url: string | null;
