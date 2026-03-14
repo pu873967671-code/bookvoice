@@ -1,4 +1,4 @@
-# Bookvoice API - Clean Dockerfile for Zeabur
+# ClawRead API - Dockerfile for Zeabur
 FROM node:22-alpine
 
 WORKDIR /app
@@ -6,26 +6,23 @@ WORKDIR /app
 # Install ffmpeg for audio processing
 RUN apk add --no-cache ffmpeg
 
-# Copy root package files
-COPY package.json package-lock.json ./
-COPY .npmrc ./
-
-# Copy workspace package.json files
+# Copy ALL package.json files first (for better caching)
+COPY package.json package-lock.json* ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/db/package.json ./packages/db/
+COPY packages/shared/package.json ./packages/shared/
 
-# Copy packages source (needed for workspace references)
-COPY packages ./packages
+# Install dependencies at root (monorepo workspace)
+RUN npm install
 
-# Install all dependencies
-RUN npm ci
-
-# Copy apps source
+# Copy ALL source code
 COPY apps/api ./apps/api
+COPY packages/db ./packages/db
+COPY packages/shared ./packages/shared
 
-WORKDIR /app/apps/api
-
+# Build from workspace root to ensure correct resolution
+WORKDIR /app
 ENV PORT=3000
 EXPOSE 3000
 
-CMD ["npx", "tsx", "src/main.ts"]
+CMD ["npm", "run", "start", "--workspace", "@clawread/api"]

@@ -1,24 +1,26 @@
-# Worker Dockerfile - Force npm for monorepo
-FROM node:20-alpine
+# ClawRead Worker - Dockerfile for Zeabur
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Install ffmpeg
+# Install ffmpeg for audio processing
 RUN apk add --no-cache ffmpeg
 
-# Copy package files
-COPY package.json package-lock.json ./
-
-# Copy workspace packages
+# Copy ALL package.json files first (for better caching)
+COPY package.json package-lock.json* ./
 COPY apps/worker/package.json ./apps/worker/
-COPY packages ./packages
+COPY packages/db/package.json ./packages/db/
+COPY packages/shared/package.json ./packages/shared/
 
-# Install dependencies with npm (not pnpm)
-RUN npm ci --include=dev
+# Install dependencies at root (monorepo workspace)
+RUN npm install
 
-# Copy source code
+# Copy ALL source code
 COPY apps/worker ./apps/worker
+COPY packages/db ./packages/db
+COPY packages/shared ./packages/shared
 
-WORKDIR /app/apps/worker
+# Build from workspace root to ensure correct resolution
+WORKDIR /app
 
-CMD ["npx", "tsx", "src/main.ts"]
+CMD ["npm", "run", "start", "--workspace", "@clawread/worker"]
