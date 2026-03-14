@@ -1,17 +1,22 @@
-# Simple Next.js Dockerfile
+# Next.js Web App Dockerfile (monorepo aware)
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy root package files for monorepo
 COPY package*.json ./
+COPY package-lock.json* ./
+
+# Copy all workspace package.json files
 COPY apps/web/package*.json ./apps/web/
+COPY packages/shared/package*.json ./packages/shared/ 2>/dev/null || true
 
 # Install dependencies
-RUN npm ci --workspace @bookvoice/web
+RUN npm install
 
-# Copy web app source
+# Copy all source code
 COPY apps/web ./apps/web
+COPY packages ./packages
 
 # Build
 WORKDIR /app/apps/web
