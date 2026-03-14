@@ -3,28 +3,28 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy root package files for monorepo
-COPY package*.json ./
-COPY package-lock.json* ./
+# Copy ALL package.json files first (for better caching)
+COPY package.json package-lock.json* ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/db/package.json ./packages/db/
+COPY packages/shared/package.json ./packages/shared/
 
-# Copy all workspace package.json files
-COPY apps/web/package*.json ./apps/web/
-COPY packages/shared/package*.json ./packages/shared/ 2>/dev/null || true
-
-# Install dependencies
+# Install dependencies at root (monorepo workspace)
 RUN npm install
 
-# Copy all source code
+# Copy ALL source code
 COPY apps/web ./apps/web
-COPY packages ./packages
+COPY packages/db ./packages/db
+COPY packages/shared ./packages/shared
 
-# Build
-WORKDIR /app/apps/web
-RUN npm run build
+# Build from workspace root to ensure correct resolution
+WORKDIR /app
+RUN npm run build --workspace @bookvoice/web
 
 EXPOSE 8080
 
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 
+WORKDIR /app/apps/web
 CMD ["npm", "start"]
