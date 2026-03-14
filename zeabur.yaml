@@ -19,7 +19,7 @@ services:
       dockerfile: apps/api/Dockerfile.combined
     env:
       NODE_ENV: production
-      MOCK_TTS: "true"
+      MOCK_TTS: "false"
     # Volume 挂载由 Zeabur 控制台手动配置：
     # - 挂载路径: /data
     # - 环境变量: STORAGE_ROOT=/data/storage
