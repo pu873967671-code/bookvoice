@@ -36,6 +36,9 @@ EXPOSE 8080
 
 # Start script for both API and Worker in same container
 RUN printf '#!/bin/sh\n\
+echo "[combined] Checking /data mount..."\n\
+ls -la /data 2>/dev/null || echo "[combined] /data not found"\n\
+echo "[combined] STORAGE_ROOT=$STORAGE_ROOT"\n\
 echo "[combined] Starting Worker..."\n\
 cd /app/apps/worker && npx tsx src/main.ts &\n\
 WORKER_PID=$!\n\
