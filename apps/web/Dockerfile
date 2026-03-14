@@ -19,7 +19,7 @@ COPY packages/shared ./packages/shared
 
 # Build from workspace root to ensure correct resolution
 WORKDIR /app
-RUN npm run build --workspace @bookvoice/web
+RUN npm run build --workspace @clawread/web
 
 EXPOSE 8080
 
@@ -27,4 +27,4 @@ ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 
 WORKDIR /app/apps/web
-CMD ["npm", "start"]
+CMD ["npm", "run", "start", "--workspace", "@clawread/web"]
