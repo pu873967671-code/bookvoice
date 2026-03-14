@@ -1,3 +1,6 @@
+# ClawRead Zeabur 部署配置
+# 使用合并容器解决 API + Worker 存储不共享问题
+
 services:
   # Web 前端
   - name: web
@@ -8,21 +11,15 @@ services:
     env:
       NODE_ENV: production
 
-  # API 服务
-  - name: api
+  # Combined API + Worker 服务（合并容器，共享存储）
+  - name: api-worker
     type: node
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
-    env:
-      NODE_ENV: production
-
-  # Worker 服务（需要 ffmpeg）
-  - name: worker
-    type: node
-    build:
-      context: .
-      dockerfile: apps/worker/Dockerfile
+      dockerfile: apps/api/Dockerfile.combined
     env:
       NODE_ENV: production
       MOCK_TTS: "true"
+    # Volume 挂载由 Zeabur 控制台手动配置：
+    # - 挂载路径: /data
+    # - 环境变量: STORAGE_ROOT=/data/storage
