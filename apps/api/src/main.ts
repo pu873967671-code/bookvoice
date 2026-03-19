@@ -677,7 +677,7 @@ app.post('/v1/tts/speak', async (req, res) => {
   }
 });
 
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || 3000); // force rebuild
 app.listen(port, '0.0.0.0', async () => {
   await fs.mkdir(storageRoot, { recursive: true });
   await ensureSchema();
